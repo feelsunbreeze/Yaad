@@ -3,6 +3,10 @@ import {
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import {
+  isPermissionGranted,
+  requestPermission,
+} from "@tauri-apps/plugin-notification";
 import "./App.css";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -17,14 +21,7 @@ interface ReminderView {
   human_time: string | null;
 }
 
-interface Toast {
-  id: number;
-  title: string;
-}
-
 type SnoozePreset = "1h" | "tonight" | "tomorrow" | "next_week";
-
-let _toastId = 0;
 
 // ── Time helpers ─────────────────────────────────────────────────────────────
 
@@ -98,6 +95,31 @@ function sniffTime(raw: string): string | null {
   return null;
 }
 
+// ── Notification permission ──────────────────────────────────────────────────
+//
+// On Windows 11 (and macOS / Linux), the OS will silently swallow any toast
+// from an app that hasn't been granted notification permission. We ask once
+// on app mount; once granted, the OS remembers forever. After this runs,
+// every `app.notification().builder()...show()` call from the Rust side
+// (worker.rs, commands.rs) will surface as a real Windows 11 toast in Action
+// Center — not as an in-program <div>.
+async function ensureNotificationPermission(): Promise<boolean> {
+  try {
+    let granted = await isPermissionGranted();
+    if (!granted) {
+      const res = await requestPermission();
+      granted = res === "granted";
+    }
+    if (!granted) {
+      console.warn("Yaad: OS notification permission was not granted — system toasts will not appear.");
+    }
+    return granted;
+  } catch (e) {
+    console.error("Notification permission check failed:", e);
+    return false;
+  }
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -109,7 +131,6 @@ export default function App() {
   const [saving, setSaving]       = createSignal(false);
   const [dissolving, setDissolving] = createSignal(new Set<string>());
   const [snoozeFor, setSnoozeFor] = createSignal<string | null>(null);
-  const [toasts, setToasts]       = createSignal<Toast[]>([]);
 
   const chip = createMemo(() => sniffTime(raw()));
 
@@ -133,9 +154,12 @@ export default function App() {
   }
 
   async function triggerTestNotification() {
+    // Make sure the OS will accept our toast. No in-app fallback rendering —
+    // if Windows refuses the toast, we want to know, not paper over it.
+    const ok = await ensureNotificationPermission();
+    if (!ok) return;
     try {
       await invoke("test_notification");
-      pushToast("Dispatched test alert...");
     } catch (e) { console.error(e); }
   }
 
@@ -174,13 +198,6 @@ export default function App() {
     setDissolving(prev => new Set([...prev, id]));
   }
 
-  // ── Toast ─────────────────────────────────────────────────────────────────
-  function pushToast(title: string) {
-    const id = ++_toastId;
-    setToasts(prev => [...prev, { id, title }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
-  }
-
   // ── Open capture ──────────────────────────────────────────────────────────
   function openCapture() {
     setRaw("");
@@ -192,12 +209,18 @@ export default function App() {
 
   // ── Mount ─────────────────────────────────────────────────────────────────
   onMount(async () => {
+    // Request OS notification permission up front. Once granted (Windows 11
+    // remembers per-AUMID forever), the Rust worker's `.notification()...show()`
+    // calls become real Windows toasts in Action Center.
+    await ensureNotificationPermission();
+
     await load();
     await loadCompleted();
 
-    // Tauri events
-    const unlisten1 = await listen<{ title: string }>("reminder:fired", ev => {
-      pushToast(ev.payload.title);
+    // Tauri events: when a reminder fires in the Rust worker, the OS toast is
+    // dispatched there. The JS side only refreshes the visible lists — it does
+    // NOT render an in-program toast. The OS is the source of truth for alerts.
+    const unlisten1 = await listen<{ title: string }>("reminder:fired", () => {
       load();
       loadCompleted();
     });
@@ -392,17 +415,8 @@ export default function App() {
         </Show>
       </main>
 
-      {/* ── In-app toasts ── */}
-      <div class="toast-area">
-        <For each={toasts()}>
-          {t => (
-            <div class="toast">
-              <div class="toast-label">now surfacing</div>
-              <div class="toast-title">{t.title}</div>
-            </div>
-          )}
-        </For>
-      </div>
+      {/* In-program toasts removed — alerts are dispatched to the OS
+          (Windows 11 Action Center / macOS Notification Center / libnotify). */}
 
       {/* ── Capture Overlay ── */}
       <Show when={overlay()}>

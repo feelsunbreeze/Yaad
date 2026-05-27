@@ -1,6 +1,6 @@
 use serde_json::json;
 use tauri::{State, AppHandle};
-use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_notification::{NotificationExt, PermissionState};
 use ulid::Ulid;
 use chrono::Utc;
 use serde::Serialize;
@@ -199,15 +199,54 @@ pub fn snooze(
 }
 
 // ── test_notification ────────────────────────────────────────────────────────
-
+//
+// Dispatches a real OS-level toast through tauri-plugin-notification:
+//   Windows 11 → WinRT ToastNotificationManager → Action Center
+//   macOS      → UNUserNotificationCenter
+//   Linux      → libnotify over DBus (notify-send / libnotify-bin required)
+//
+// We explicitly verify the OS permission first; on Windows 11 the call will
+// no-op silently if the AppUserModelID isn't registered or the user has
+// disabled notifications for this app, so failing loudly here surfaces the
+// real reason instead of pretending the toast was sent.
 #[tauri::command]
 pub fn test_notification(app: AppHandle) -> Result<(), String> {
+    let granted = ensure_permission(&app)?;
+    if !granted {
+        return Err(
+            "OS notification permission denied. \
+             Enable notifications for Yaad in Windows Settings → System → Notifications."
+                .into(),
+        );
+    }
+
     app.notification()
         .builder()
         .title("Yaad — notification test")
-        .body("If you see this, the system is listening.")
+        .body("If you see this in Action Center, the system is listening.")
         .show()
         .map_err(|e| e.to_string())
+}
+
+/// Check permission state, requesting it from the OS if it's still Unknown.
+/// Returns true when the OS will accept toasts from this app.
+pub(crate) fn ensure_permission(app: &AppHandle) -> Result<bool, String> {
+    let state = app
+        .notification()
+        .permission_state()
+        .map_err(|e| e.to_string())?;
+
+    let granted = match state {
+        PermissionState::Granted => true,
+        PermissionState::Denied => false,
+        _ => matches!(
+            app.notification()
+                .request_permission()
+                .map_err(|e| e.to_string())?,
+            PermissionState::Granted
+        ),
+    };
+    Ok(granted)
 }
 
 // ── list_completed (archive) ─────────────────────────────────────────────────

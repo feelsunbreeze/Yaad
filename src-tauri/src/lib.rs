@@ -5,6 +5,7 @@ pub mod worker;
 pub mod parser;
 
 use tauri::Manager;
+use tauri_plugin_notification::{NotificationExt, PermissionState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,6 +23,23 @@ pub fn run() {
             let honker_db = state.honker_db.clone();
 
             app.manage(state);
+
+            // Bootstrap OS notification permission up front so the background
+            // worker can fire real Windows 11 / macOS / Linux toasts even if
+            // the JS layer hasn't requested permission yet (e.g. autostart at
+            // boot with the window hidden, or first reminder firing before the
+            // user has interacted with the UI).
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                match handle.notification().permission_state() {
+                    Ok(PermissionState::Granted) => {}
+                    Ok(_) => {
+                        let _ = handle.notification().request_permission();
+                    }
+                    Err(e) => eprintln!("[yaad] could not query notification permission: {e}"),
+                }
+            });
+
             worker::start_worker(app.handle().clone(), honker_db);
 
             Ok(())

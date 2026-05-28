@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
 import type { Reminder, Tab, SnoozePreset } from "@/lib/types";
 import { ReminderCard } from "./ReminderCard";
 import { SmileIcon } from "./icons";
@@ -30,10 +30,51 @@ export interface ReminderListProps {
  * The scrollable middle panel. When the active tab has nothing, the
  * empty-state (smiley + italic line) takes the whole panel. Otherwise we
  * render the section label and a `<For>` over the cards.
+ *
+ * Adds a fade-in scroll shadow at the bottom edge when the list overflows
+ * and the user isn't yet at the bottom. The shadow disappears when there's
+ * nothing more to scroll to — a quiet visual affordance that "there's more
+ * below" without ever being shouty.
  */
 export function ReminderList(props: ReminderListProps) {
+  let listRef: HTMLElement | undefined;
+  const [showShadow, setShowShadow] = createSignal(false);
+
+  onMount(() => {
+    if (!listRef) return;
+    const el = listRef;
+
+    function check() {
+      const overflow = el.scrollHeight > el.clientHeight + 4;
+      const notAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight > 4;
+      setShowShadow(overflow && notAtBottom);
+    }
+    check();
+    el.addEventListener("scroll", check, { passive: true });
+
+    // Re-check whenever the list or its parent resizes (e.g. window resize,
+    // address bar collapse on mobile, etc).
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+
+    // Re-check whenever the visible children change (new reminder added,
+    // card collapses on completion, tab switch). Cheaper than firing on
+    // every list prop change at the parent level.
+    const mo = new MutationObserver(check);
+    mo.observe(el, { childList: true, subtree: true });
+
+    onCleanup(() => {
+      el.removeEventListener("scroll", check);
+      ro.disconnect();
+      mo.disconnect();
+    });
+  });
+
   return (
-    <main class="list-wrap">
+    <main
+      ref={listRef}
+      class={`list-wrap${showShadow() ? " show-scroll-shadow" : ""}`}
+    >
       <Show
         when={props.reminders.length > 0}
         fallback={

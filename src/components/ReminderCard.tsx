@@ -9,8 +9,6 @@ export interface ReminderCardProps {
   onSnooze: (id: string, preset: SnoozePreset) => void;
 }
 
-/** Snooze popover options. Order matches the Rust `snooze` command's
- *  accepted preset strings exactly. */
 const SNOOZE_OPTIONS: { id: SnoozePreset; label: string }[] = [
   { id: "1h",        label: "in 1 hour"  },
   { id: "tonight",   label: "tonight"    },
@@ -18,18 +16,38 @@ const SNOOZE_OPTIONS: { id: SnoozePreset; label: string }[] = [
   { id: "next_week", label: "next week"  },
 ];
 
+/** Total length (in CSS animation duration ms) of the completion sequence:
+ *  check-draw → color wash → hold → fade + collapse. Keep in lockstep
+ *  with the `.reminder-card.completing` animation duration in App.css. */
+const COMPLETION_DURATION_MS = 1250;
+
 /**
- * A single reminder row: check circle on the left, title + meta in the
- * middle, snooze button + urgent dot on the right.
+ * A single reminder row. The visual is unchanged from the prototype —
+ * check circle, body, snooze affordance — but the toggle interaction is
+ * now a small ceremony:
  *
- * Click anywhere on the card (outside the snooze popover) to toggle done.
- * Keyboard: Enter/Space activates done. The snooze popover is opened with
- * its own button and dismisses on outside click or Escape.
+ *   1. Check strokes in (SVG dash-offset) — feels like ink with a fine pen
+ *   2. Card colour washes to a success tone (cream → muted green)
+ *   3. A brief hold, so the user reads the completion
+ *   4. Card fades and collapses to zero height, siblings slide up
+ *
+ * The whole sequence is ~1.25s. The actual data write (the call to
+ * `props.onToggle`, which fires the `complete` IPC) is delayed to the end
+ * so the card stays mounted for the animation. Once we call onToggle the
+ * hook's optimistic flip moves the reminder to the `done` bucket and the
+ * `<For>` in ReminderList unmounts the card — by which point the card is
+ * already at opacity 0 / max-height 0, so the unmount is invisible.
  */
 export function ReminderCard(props: ReminderCardProps) {
   const [snoozeOpen, setSnoozeOpen] = createSignal(false);
+  const [isCompleting, setIsCompleting] = createSignal(false);
   const [now, setNow] = createSignal(Date.now());
 
+  let cardRef: HTMLDivElement | undefined;
+
+  // Live countdown — refresh `now` once a second while there's a fire_at to
+  // count toward. The interval clears itself when the reminder is marked
+  // done (no more countdown to render).
   createEffect(() => {
     if (props.reminder.fireAt && !props.reminder.done) {
       const t = window.setInterval(() => setNow(Date.now()), 1000);
@@ -40,14 +58,42 @@ export function ReminderCard(props: ReminderCardProps) {
   const cardClass = () => {
     const classes = ["reminder-card"];
     if (props.reminder.done) classes.push("done");
-    // urgent treatment is suppressed once the reminder is done — keeps the
-    // red spine from fighting the dimmed/strikethrough state visually.
-    if (props.reminder.urgent && !props.reminder.done) classes.push("urgent");
+    // urgent treatment is suppressed once the reminder is done (or about
+    // to be done) so the red spine doesn't fight the success wash.
+    if (props.reminder.urgent && !props.reminder.done && !isCompleting()) {
+      classes.push("urgent");
+    }
     if (snoozeOpen()) classes.push("snooze-open");
+    if (isCompleting()) classes.push("completing");
     return classes.join(" ");
   };
 
-  const onActivate = () => props.onToggle(props.reminder.id);
+  function onActivate() {
+    // Don't toggle when:
+    //   - already done (backend has no reopen)
+    //   - animation already in flight (double-click guard)
+    //   - the snooze popover is open — first click dismisses the popover
+    if (props.reminder.done) return;
+    if (isCompleting()) return;
+    if (snoozeOpen()) {
+      setSnoozeOpen(false);
+      return;
+    }
+
+    // Pin the natural height as a CSS variable so the collapse keyframe
+    // animates from "this card's actual height" to 0, rather than from a
+    // magic-number max-height that may clip long titles.
+    if (cardRef) {
+      cardRef.style.setProperty("--natural-height", `${cardRef.offsetHeight}px`);
+    }
+
+    setIsCompleting(true);
+    const t = window.setTimeout(
+      () => props.onToggle(props.reminder.id),
+      COMPLETION_DURATION_MS,
+    );
+    onCleanup(() => window.clearTimeout(t));
+  }
 
   // Outside-click + Escape close the snooze popover. Effect re-subscribes
   // whenever snoozeOpen flips so we don't leak listeners.
@@ -57,7 +103,6 @@ export function ReminderCard(props: ReminderCardProps) {
     const closeOnEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") setSnoozeOpen(false);
     };
-    // setTimeout so the click that opened us doesn't immediately close.
     const t = window.setTimeout(() => {
       window.addEventListener("click", closeOnClick);
     }, 0);
@@ -75,16 +120,16 @@ export function ReminderCard(props: ReminderCardProps) {
     props.onSnooze(props.reminder.id, preset);
   }
 
-  // The card meta row is hidden entirely when this reminder is done — the
-  // strikethrough title + reduced opacity carry the visual weight and
-  // showing a stale time label clutters the completed tab.
   const showMeta = () =>
-    !props.reminder.done && (props.reminder.timeLabel !== null || props.reminder.tag !== null);
-  const showResolved = () => props.reminder.done && props.reminder.completedAt !== null;
-  const showSnooze   = () => !props.reminder.done;
+    !props.reminder.done &&
+    (props.reminder.timeLabel !== null || props.reminder.tag !== null);
+  const showResolved = () =>
+    props.reminder.done && props.reminder.completedAt !== null;
+  const showSnooze = () => !props.reminder.done && !isCompleting();
 
   return (
     <div
+      ref={cardRef}
       class={cardClass()}
       role="button"
       tabIndex={0}
@@ -97,7 +142,7 @@ export function ReminderCard(props: ReminderCardProps) {
         }
       }}
     >
-      <div class={`check-wrap${props.reminder.done ? " checked" : ""}`}>
+      <div class={`check-wrap${props.reminder.done || isCompleting() ? " checked" : ""}`}>
         <CheckIcon />
       </div>
 
@@ -109,14 +154,14 @@ export function ReminderCard(props: ReminderCardProps) {
             <Show when={props.reminder.fireAt || props.reminder.timeLabel}>
               <span class="meta-time">
                 <ClockIcon />
-                {props.reminder.fireAt ? formatRelativeLive(props.reminder.fireAt, now()) : props.reminder.timeLabel}
+                {props.reminder.fireAt
+                  ? formatRelativeLive(props.reminder.fireAt, now())
+                  : props.reminder.timeLabel}
               </span>
             </Show>
 
             <Show when={props.reminder.tag} keyed>
-              {tag => (
-                <span class={`meta-tag tag-${tag.tone}`}>{tag.label}</span>
-              )}
+              {tag => <span class={`meta-tag tag-${tag.tone}`}>{tag.label}</span>}
             </Show>
           </div>
         </Show>
@@ -131,7 +176,7 @@ export function ReminderCard(props: ReminderCardProps) {
       </div>
 
       <div class="reminder-right">
-        <Show when={props.reminder.urgent && !props.reminder.done}>
+        <Show when={props.reminder.urgent && !props.reminder.done && !isCompleting()}>
           <span class="dot dot-red" />
         </Show>
 

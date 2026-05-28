@@ -1,11 +1,25 @@
-import { createSignal, createEffect, onCleanup } from "solid-js";
-import { PlusIcon } from "./icons";
+import { createSignal, createEffect, onCleanup, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { PlusIcon } from "./icons";
+import { ParseToken } from "./ParseToken";
 
 export interface AddBarProps {
   onSubmit: (title: string) => void;
 }
 
+/**
+ * Bottom input bar with a live parse preview underneath.
+ *
+ * As the user types, a debounced call to the Rust `parse_time` IPC returns
+ * the parser's interpretation of any time phrase in the text. The preview
+ * line keeps a static prefix ("↳ will surface ") and lets the variable
+ * token swap smoothly via `<ParseToken>` — so "in 1 hour" gracefully
+ * crossfades into "tomorrow at 5 PM" in-place, never hard-cuts.
+ *
+ * The whole preview line itself fades in/out depending on whether there's
+ * any input — that's the outer animation, handled by `.parse-preview`'s
+ * own `rise` keyframe.
+ */
 export function AddBar(props: AddBarProps) {
   const [value, setValue] = createSignal("");
   const [parsedText, setParsedText] = createSignal("");
@@ -22,7 +36,9 @@ export function AddBar(props: AddBarProps) {
     clearTimeout(debounceTimer);
     debounceTimer = window.setTimeout(async () => {
       try {
-        const res = await invoke<{ human_time: string }>("parse_time", { raw: text });
+        const res = await invoke<{ human_time: string }>("parse_time", {
+          raw: text,
+        });
         setParsedText(res.human_time);
       } catch (e) {
         console.error("Parse error", e);
@@ -67,12 +83,13 @@ export function AddBar(props: AddBarProps) {
           <PlusIcon />
         </button>
       </div>
-      
-      {parsedText() && (
+
+      <Show when={parsedText()}>
         <div class="parse-preview">
-          ↳ will surface randomly before {parsedText()}
+          <span class="parse-prefix">↳ will surface&nbsp;</span>
+          <ParseToken value={parsedText()} />
         </div>
-      )}
+      </Show>
     </footer>
   );
 }

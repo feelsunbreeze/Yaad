@@ -1,7 +1,8 @@
 use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, Timelike, Weekday};
 use regex::Regex;
+use serde::Serialize;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct ParsedReminder {
     pub title: String,
     pub fire_at_ms: i64,

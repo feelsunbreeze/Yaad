@@ -26,9 +26,6 @@ interface BackendReminder {
  *  the time bound the user already calibrated against. */
 const URGENT_WINDOW_MS = 3 * 60 * 60 * 1000;
 
-/** Reload cadence while the window is visible. Pauses when document.hidden
- *  flips true so the OS isn't woken on a hidden window. */
-const LIVE_TICK_MS = 60_000;
 
 /** End-of-today epoch ms — anything firing before this is in the "today"
  *  bucket; anything after is "upcoming". */
@@ -70,18 +67,6 @@ function mapBackend(b: BackendReminder, now: number): Reminder {
   };
 }
 
-/**
- * Quick-tag chips under the add-bar.
- *
- * `injectPrefix` is prepended to the raw input on submit. The Rust parser
- * (`src-tauri/src/parser.rs`) extracts time phrases from the title and
- * computes `fire_at`, so a chip like "⚡ urgent" effectively means "set
- * fire_at = now + 30m" without needing a separate DB column for tags.
- */
-export const QUICK_TAGS: QuickTag[] = [
-  { id: "morning", label: "🌅 morning", injectPrefix: "tomorrow morning" },
-  { id: "urgent",  label: "⚡ urgent",  injectPrefix: "in 30 minutes"   },
-];
 
 /**
  * Central reminder hook. Owns the entire data lifecycle:
@@ -151,19 +136,12 @@ export function useReminders() {
     }
   }
 
-  async function addReminder(rawTitle: string, selectedTagIds: string[]): Promise<void> {
+  async function addReminder(rawTitle: string): Promise<void> {
     const title = rawTitle.trim();
     if (!title) return;
 
-    // Bake selected quick-tag prefixes into the raw string so the Rust parser
-    // picks the time cue up.
-    const prefixes = QUICK_TAGS
-      .filter(q => selectedTagIds.includes(q.id) && q.injectPrefix)
-      .map(q => q.injectPrefix as string);
-    const raw = [...prefixes, title].join(" ");
-
     try {
-      await invoke("capture_submit", { raw });
+      await invoke("capture_submit", { raw: title });
       await loadReminders();
     } catch (e) {
       console.error("capture_submit failed:", e);
@@ -202,26 +180,12 @@ export function useReminders() {
   onMount(() => {
     let unfire: UnlistenFn | undefined;
     let unsnooze: UnlistenFn | undefined;
-    let tickId: number | undefined;
 
-    function startTick() {
-      stopTick();
-      tickId = window.setInterval(() => { void loadReminders(); }, LIVE_TICK_MS);
-    }
-    function stopTick() {
-      if (tickId !== undefined) {
-        window.clearInterval(tickId);
-        tickId = undefined;
-      }
-    }
     function onVisibility() {
-      if (document.hidden) {
-        stopTick();
-      } else {
+      if (!document.hidden) {
         // Immediate refresh on resume — relative timestamps and any reminders
         // fired while hidden are now up to date.
         void loadReminders();
-        startTick();
       }
     }
 
@@ -232,12 +196,10 @@ export function useReminders() {
     })();
 
     document.addEventListener("visibilitychange", onVisibility);
-    if (!document.hidden) startTick();
 
     onCleanup(() => {
       unfire?.();
       unsnooze?.();
-      stopTick();
       document.removeEventListener("visibilitychange", onVisibility);
     });
   });

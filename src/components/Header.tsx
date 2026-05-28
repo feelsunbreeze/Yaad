@@ -32,8 +32,8 @@ export function Header(props: HeaderProps) {
       </div>
       <button
         class="icon-btn"
-        aria-label="Test notification"
-        title="Send a test notification"
+        aria-label="Settings"
+        title="Settings"
         type="button"
         onClick={props.onSettings}
       >

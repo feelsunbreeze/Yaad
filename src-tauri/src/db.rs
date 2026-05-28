@@ -75,6 +75,10 @@ pub fn init_db(app_dir: PathBuf) -> Result<AppState, Box<dyn std::error::Error>>
             reminder_id   TEXT,
             occurrence_id TEXT,
             payload       TEXT
+        );
+        CREATE TABLE IF NOT EXISTS settings (
+            key           TEXT PRIMARY KEY,
+            value         TEXT NOT NULL
         );",
     )?;
 

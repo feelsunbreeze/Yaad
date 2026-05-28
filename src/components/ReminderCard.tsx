@@ -1,7 +1,7 @@
 import { Show, For, createSignal, createEffect, onCleanup } from "solid-js";
 import type { Reminder, SnoozePreset } from "@/lib/types";
 import { CheckIcon, ClockIcon } from "./icons";
-import { formatResolvedAgo } from "@/lib/date";
+import { formatResolvedAgo, formatRelativeLive } from "@/lib/date";
 
 export interface ReminderCardProps {
   reminder: Reminder;
@@ -28,6 +28,14 @@ const SNOOZE_OPTIONS: { id: SnoozePreset; label: string }[] = [
  */
 export function ReminderCard(props: ReminderCardProps) {
   const [snoozeOpen, setSnoozeOpen] = createSignal(false);
+  const [now, setNow] = createSignal(Date.now());
+
+  createEffect(() => {
+    if (props.reminder.fireAt && !props.reminder.done) {
+      const t = window.setInterval(() => setNow(Date.now()), 1000);
+      onCleanup(() => window.clearInterval(t));
+    }
+  });
 
   const cardClass = () => {
     const classes = ["reminder-card"];
@@ -35,6 +43,7 @@ export function ReminderCard(props: ReminderCardProps) {
     // urgent treatment is suppressed once the reminder is done — keeps the
     // red spine from fighting the dimmed/strikethrough state visually.
     if (props.reminder.urgent && !props.reminder.done) classes.push("urgent");
+    if (snoozeOpen()) classes.push("snooze-open");
     return classes.join(" ");
   };
 
@@ -97,10 +106,10 @@ export function ReminderCard(props: ReminderCardProps) {
 
         <Show when={showMeta()}>
           <div class="reminder-meta">
-            <Show when={props.reminder.timeLabel}>
+            <Show when={props.reminder.fireAt || props.reminder.timeLabel}>
               <span class="meta-time">
                 <ClockIcon />
-                {props.reminder.timeLabel}
+                {props.reminder.fireAt ? formatRelativeLive(props.reminder.fireAt, now()) : props.reminder.timeLabel}
               </span>
             </Show>
 

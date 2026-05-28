@@ -44,17 +44,7 @@ const FRAMINGS: &[&str] = &[
 /// re-queued for the hour (07:00 local) rather than dropped.
 const QUIET_HOURS_END: u32 = 7;
 
-/// Min/max jitter window in seconds. Pattern interrupt fires at an
-/// unexpected moment mid-task — exactly when ADHD brains notice.
-const JITTER_MIN_SECS: u64 = 30;
-const JITTER_MAX_SECS: u64 = 420; // 7 minutes
 
-/// Re-fire delay window in seconds (6–12 minutes).
-const REFIRE_MIN_SECS: u64 = 360;
-const REFIRE_MAX_SECS: u64 = 720;
-
-/// How many times a single occurrence is allowed to surface as a toast.
-const MAX_ATTEMPTS: u64 = 3;
 
 pub fn start_worker(app: AppHandle, db: Database) {
     std::thread::spawn(move || {
@@ -132,13 +122,9 @@ fn process_job(app: AppHandle, db: Database, job: Job) {
         return;
     }
 
-    // ── Jitter sleep ──────────────────────────────────────────────────────
-    let jitter_secs = pseudo_rand(&title) % (JITTER_MAX_SECS - JITTER_MIN_SECS) + JITTER_MIN_SECS;
-    std::thread::sleep(Duration::from_secs(jitter_secs));
-
     // ── Pre-fire DB check ─────────────────────────────────────────────────
-    // Between enqueue and now (which can be minutes thanks to jitter) the
-    // user may have completed or snoozed this reminder. Querying the DB
+    // Between enqueue and now the user may have completed or snoozed this reminder.
+    // Querying the DB here means we don't fire toasts the user has already resolved.
     // here means we don't fire toasts the user has already resolved.
     //
     // Returns:
@@ -183,33 +169,11 @@ fn process_job(app: AppHandle, db: Database, job: Job) {
     // Log the fire so future analytics / debugging has a trail.
     let _ = log_fire(&app, &reminder_id, &occurrence_id, fire_result.is_ok());
 
-    // Tell the UI to refresh — relative times shift, status hasn't but the
-    // list does.
+    // Tell the UI to refresh
     let _ = app.emit(
         "reminder:fired",
         json!({ "reminder_id": reminder_id, "title": title }),
     );
-
-    // ── Re-fire if not completed (max 3 attempts) ─────────────────────────
-    if attempt + 1 < MAX_ATTEMPTS {
-        let refire_q = db.queue("due_reminders", QueueOpts::default());
-        let refire_delay =
-            REFIRE_MIN_SECS + pseudo_rand(&title) % (REFIRE_MAX_SECS - REFIRE_MIN_SECS);
-        let run_at = Local::now().timestamp() + refire_delay as i64;
-
-        let mut opts = EnqueueOpts::default();
-        opts.run_at = Some(run_at);
-
-        let _ = refire_q.enqueue(
-            &json!({
-                "reminder_id":   reminder_id,
-                "occurrence_id": occurrence_id,
-                "title":         title,
-                "attempt":       attempt + 1,
-            }),
-            opts,
-        );
-    }
 }
 
 /// Query the DB: is the reminder still active AND is the targeted occurrence

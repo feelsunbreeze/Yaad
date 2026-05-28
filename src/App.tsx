@@ -11,8 +11,10 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { Tabs } from "@/components/Tabs";
 import { ReminderList } from "@/components/ReminderList";
 import { AddBar } from "@/components/AddBar";
-import { useReminders, QUICK_TAGS } from "@/hooks/useReminders";
+import { useReminders } from "@/hooks/useReminders";
 import { formatDatePill, formatGreeting } from "@/lib/date";
+import { Onboarding } from "@/components/Onboarding";
+import { SettingsModal } from "@/components/SettingsModal";
 
 /**
  * Notification permission bootstrap from PR #1 — preserved here because
@@ -54,42 +56,62 @@ async function ensureNotificationPermission(): Promise<void> {
 export default function App() {
   const r = useReminders();
 
-  // Re-evaluate greeting + date pill every minute so leaving the app open
-  // across noon flips "good morning" → "good afternoon" without a refresh.
+  const [userName, setUserName] = createSignal<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = createSignal(false);
+  const [loadingInitial, setLoadingInitial] = createSignal(true);
+
+  // Re-evaluate greeting + date pill every minute
   const [now, setNow] = createSignal(new Date());
-  const greeting = createMemo(() => formatGreeting(now()));
+  const greeting = createMemo(() => formatGreeting(now(), userName() || undefined));
   const date     = createMemo(() => formatDatePill(now()));
 
-  onMount(() => {
+  onMount(async () => {
     void ensureNotificationPermission();
+
+    try {
+      const settings = await invoke<Record<string, string>>("get_settings");
+      if (settings["name"]) {
+        setUserName(settings["name"]);
+      }
+    } catch (e) {
+      console.error("Failed to load settings on mount", e);
+    } finally {
+      setLoadingInitial(false);
+    }
 
     const clockTick = window.setInterval(() => setNow(new Date()), 60_000);
     onCleanup(() => window.clearInterval(clockTick));
   });
 
-  /**
-   * Gear icon → fire an OS test notification. If the call rejects (OS has
-   * denied us / not bundled with a registered AUMID on Windows / libnotify
-   * missing on Linux), surface the underlying reason through the same
-   * error banner the hook uses for IPC failures.
-   */
-  async function onTestNotification() {
-    try {
-      await invoke("test_notification");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("test_notification failed:", msg);
-      r.raiseError(`notification test failed: ${msg}`);
-    }
+  function onSettings() {
+    setIsSettingsOpen(true);
+  }
+
+  function handleFactoryReset() {
+    setUserName(null);
+    setIsSettingsOpen(false);
+    r.loadReminders();
   }
 
   return (
     <div class="app">
+      {!loadingInitial() && !userName() && (
+        <Onboarding onComplete={(name) => setUserName(name)} />
+      )}
+      
+      <SettingsModal 
+        isOpen={isSettingsOpen()} 
+        onClose={() => setIsSettingsOpen(false)}
+        currentName={userName() || ""}
+        onNameChange={(name) => setUserName(name)}
+        onFactoryReset={handleFactoryReset}
+      />
+
       <header class="header">
         <Header
           greeting={greeting()}
           date={date()}
-          onSettings={onTestNotification}
+          onSettings={onSettings}
         />
         <ProgressBar
           done={r.done()}
@@ -122,7 +144,7 @@ export default function App() {
         onSnooze={r.snoozeReminder}
       />
 
-      <AddBar quickTags={QUICK_TAGS} onSubmit={r.addReminder} />
+      <AddBar onSubmit={r.addReminder} />
     </div>
   );
 }

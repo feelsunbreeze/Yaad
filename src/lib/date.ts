@@ -36,14 +36,7 @@ export function formatDatePill(d: Date = new Date()): string {
   return `${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
-/**
- * Time-of-day appropriate greeting. The prototype's example was
- * "good morning, take it easy." so the morning branch keeps that exact text.
- *
- * Returned object splits the leading phrase from the italic tail — the header
- * renders them in different colours via the `<em>` element.
- */
-export function formatGreeting(d: Date = new Date()): { lead: string; tail: string } {
+export function formatGreeting(d: Date = new Date(), name?: string): { lead: string; tail: string } {
   const h = d.getHours();
   let lead: string;
   if (h < 5) lead = "still up,";
@@ -51,6 +44,15 @@ export function formatGreeting(d: Date = new Date()): { lead: string; tail: stri
   else if (h < 17) lead = "good afternoon,";
   else if (h < 22) lead = "good evening,";
   else lead = "winding down,";
+
+  const n = name ? name.toLowerCase() : undefined;
+  if (n) {
+    if (lead.endsWith(",")) {
+      lead = lead.slice(0, -1) + ` ${n},`;
+    } else {
+      lead = `${lead} ${n},`;
+    }
+  }
 
   return { lead, tail: "take it easy." };
 }
@@ -70,4 +72,23 @@ export function formatResolvedAgo(completedAt: number | null, now: number = Date
   if (days === 1) return "resolved yesterday";
   if (hrs >= 1)  return `resolved ${hrs}h ago`;
   return mins < 1 ? "resolved just now" : `resolved ${mins}m ago`;
+}
+
+/**
+ * Live relative time countdown for the cards. E.g., "in 1h 2m 5s".
+ */
+export function formatRelativeLive(fireAtMs: number, nowMs: number = Date.now()): string {
+  const diff = fireAtMs - nowMs;
+  if (diff <= 0) return "due now";
+
+  const totalSeconds = Math.floor(diff / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) return `in ${days}d ${hours}h`;
+  if (hours > 0) return `in ${hours}h ${minutes}m`;
+  if (minutes > 0) return `in ${minutes}m ${seconds}s`;
+  return `in ${seconds}s`;
 }

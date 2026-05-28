@@ -320,3 +320,155 @@ body::before {
 .check-bounce { animation: check-bounce 0.35s var(--ease) !important; }
 @keyframes check-bounce { 0% { transform: scale(1); } 40% { transform: scale(0.8); } 70% { transform: scale(1.18); } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+
+/* -- ADDBAR PARSE PREVIEW -- */
+.parse-preview {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  color: var(--text-soft);
+  margin-top: 0.5rem;
+  margin-left: 0.5rem;
+  font-style: italic;
+  display: flex;
+}
+.parse-preview-text {
+  display: inline-block;
+  animation: fade-in-up 0.3s var(--ease-out) both;
+}
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* -- MODALS & OVERLAYS -- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(245, 239, 224, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: fade-in 0.3s var(--ease-out) both;
+}
+.modal-overlay.closing {
+  animation: fade-out 0.3s var(--ease-out) both;
+}
+.modal-overlay.closing .modal-content {
+  animation: fade-out-down 0.3s var(--ease-out) both;
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes fade-out-down {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(12px); }
+}
+
+.modal-content {
+  background: rgba(255, 253, 248, 0.95);
+  border: 1.5px solid var(--cream-3);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 400px;
+  padding: 1.5rem;
+  box-shadow: 0 16px 40px rgba(92, 64, 34, 0.15);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+.modal-header h2 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  color: var(--brown-2);
+  font-weight: 500;
+}
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: var(--text-soft);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 0.25rem;
+  transition: color 0.2s;
+}
+.modal-close:hover { color: var(--text-main); }
+
+.settings-section {
+  margin-bottom: 1.5rem;
+}
+.settings-section:last-child { margin-bottom: 0; }
+.settings-section label {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-soft);
+  margin-bottom: 0.5rem;
+}
+.settings-row {
+  display: flex;
+  gap: 0.5rem;
+}
+.settings-input, .settings-select {
+  flex: 1;
+  background: var(--cream);
+  border: 1.5px solid var(--cream-3);
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  color: var(--text-main);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.settings-input:focus, .settings-select:focus {
+  border-color: var(--amber);
+}
+.settings-slider {
+  width: 100%;
+  accent-color: var(--amber);
+}
+.settings-btn {
+  background: var(--cream-2);
+  border: 1.5px solid var(--cream-3);
+  color: var(--text-main);
+  border-radius: 10px;
+  padding: 0.5rem 1rem;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+}
+.settings-btn:hover {
+  background: var(--cream-3);
+}
+.settings-btn:active {
+  transform: scale(0.96);
+}
+.settings-btn.danger {
+  color: var(--red-soft);
+  border-color: rgba(201, 107, 90, 0.3);
+}
+.settings-btn.danger:hover {
+  background: rgba(201, 107, 90, 0.1);
+}
+.settings-desc {
+  font-size: 0.8rem;
+  color: var(--text-soft);
+  margin-bottom: 0.5rem;
+}
+

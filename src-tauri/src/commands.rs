@@ -8,6 +8,21 @@ use crate::db::AppState;
 use crate::parser;
 use honker::{QueueOpts, EnqueueOpts};
 
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+fn compute_run_at(now_s: i64, fire_at_s: i64) -> i64 {
+    if now_s >= fire_at_s {
+        return fire_at_s;
+    }
+
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as i64)
+        .unwrap_or(42);
+    
+    now_s + (nanos % (fire_at_s - now_s + 1))
+}
+
 // ── serialisable view types ──────────────────────────────────────────────────
 
 /// Wire shape returned to the frontend. Mirrors the contract documented in
@@ -49,6 +64,13 @@ pub fn capture_submit(
     let fire_at_ms  = parsed.fire_at_ms;
     let fire_at_s   = fire_at_ms / 1000;
 
+    let frequency = state.db.lock().unwrap().query_row(
+        "SELECT value FROM settings WHERE key = 'notification_frequency'",
+        [],
+        |r| r.get::<_, String>(0)
+    ).and_then(|s| s.parse::<u64>().map_err(|_| rusqlite::Error::QueryReturnedNoRows))
+     .unwrap_or(2).max(1);
+
     let tx = state.honker_db.transaction().map_err(|e| e.to_string())?;
 
     tx.execute(
@@ -66,15 +88,30 @@ pub fn capture_submit(
     ).map_err(|e| e.to_string())?;
 
     let q = state.honker_db.queue("due_reminders", QueueOpts::default());
-    let mut enqueue_opts = EnqueueOpts::default();
-    enqueue_opts.run_at = Some(fire_at_s);
 
+    // Enqueue the exact deadline job
+    let mut exact_opts = EnqueueOpts::default();
+    exact_opts.run_at = Some(fire_at_s);
     q.enqueue_tx(&tx, &json!({
         "reminder_id":   reminder_id,
         "occurrence_id": occ_id,
         "title":         parsed.title,
         "human_time":    parsed.human_time,
-    }), enqueue_opts).map_err(|e| e.to_string())?;
+        "attempt":       frequency,
+    }), exact_opts).map_err(|e| e.to_string())?;
+
+    // Enqueue random pre-deadline jobs
+    for i in 1..frequency {
+        let mut opts = EnqueueOpts::default();
+        opts.run_at = Some(compute_run_at(now / 1000, fire_at_s));
+        q.enqueue_tx(&tx, &json!({
+            "reminder_id":   reminder_id,
+            "occurrence_id": occ_id,
+            "title":         parsed.title,
+            "human_time":    parsed.human_time,
+            "attempt":       i,
+        }), opts).map_err(|e| e.to_string())?;
+    }
 
     tx.commit().map_err(|e| e.to_string())?;
 
@@ -204,12 +241,15 @@ pub fn snooze(
         _           => "later".to_string(),
     };
 
+    let frequency = state.db.lock().unwrap().query_row(
+        "SELECT value FROM settings WHERE key = 'notification_frequency'",
+        [],
+        |r| r.get::<_, String>(0)
+    ).and_then(|s| s.parse::<u64>().map_err(|_| rusqlite::Error::QueryReturnedNoRows))
+     .unwrap_or(2).max(1);
+
     let tx = state.honker_db.transaction().map_err(|e| e.to_string())?;
 
-    // Mark the currently-pending occurrence as snoozed. The worker's
-    // pre-fire guard reads `state` and skips firing if it's not 'pending',
-    // so the old queued job becomes a no-op — no need to dequeue it
-    // explicitly (honker doesn't expose cancel-by-id).
     tx.execute(
         "UPDATE occurrences SET state='snoozed', resolved_at=?1
          WHERE reminder_id=?2 AND state='pending'",
@@ -228,26 +268,36 @@ pub fn snooze(
         rusqlite::params![occ_id, id, fire_at_ms, human],
     ).map_err(|e| e.to_string())?;
 
-    // Bump status back to active in case the reminder had been marked
-    // resolved by something else.
     tx.execute(
         "UPDATE reminders SET status='active', updated_at=?1, completed_at=NULL WHERE id=?2",
         rusqlite::params![db_now, id],
     ).map_err(|e| e.to_string())?;
 
     let q = state.honker_db.queue("due_reminders", QueueOpts::default());
-    let mut opts = EnqueueOpts::default();
-    opts.run_at = Some(fire_at_s);
-    q.enqueue_tx(
-        &tx,
-        &json!({
+
+    // Enqueue exact deadline job
+    let mut exact_opts = EnqueueOpts::default();
+    exact_opts.run_at = Some(fire_at_s);
+    q.enqueue_tx(&tx, &json!({
+        "reminder_id":   id,
+        "occurrence_id": occ_id,
+        "title":         title,
+        "human_time":    human,
+        "attempt":       frequency,
+    }), exact_opts).map_err(|e| e.to_string())?;
+
+    // Enqueue random pre-deadline jobs
+    for i in 1..frequency {
+        let mut opts = EnqueueOpts::default();
+        opts.run_at = Some(compute_run_at(db_now / 1000, fire_at_s));
+        q.enqueue_tx(&tx, &json!({
             "reminder_id":   id,
             "occurrence_id": occ_id,
             "title":         title,
             "human_time":    human,
-        }),
-        opts,
-    ).map_err(|e| e.to_string())?;
+            "attempt":       i,
+        }), opts).map_err(|e| e.to_string())?;
+    }
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(human)
@@ -361,4 +411,57 @@ fn iana_time_zone_get() -> Option<String> {
     // Good enough as a marker; replace with `iana-time-zone` for accuracy.
     let offset = chrono::Local::now().offset().to_string();
     Some(format!("local{offset}"))
+}
+
+// ── settings & admin ─────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_settings(state: State<'_, AppState>) -> Result<std::collections::HashMap<String, String>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let mut stmt = db.prepare("SELECT key, value FROM settings").map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    }).map_err(|e| e.to_string())?;
+
+    let mut settings = std::collections::HashMap::new();
+    for row in rows.filter_map(|r| r.ok()) {
+        settings.insert(row.0, row.1);
+    }
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn set_settings(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value=?2",
+        rusqlite::params![key, value],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn factory_reset(state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    // Wipe all tables
+    db.execute_batch(
+        "DELETE FROM notification_events;
+         DELETE FROM behavior_events;
+         DELETE FROM occurrences;
+         DELETE FROM reminders;
+         DELETE FROM settings;"
+    ).map_err(|e| e.to_string())?;
+    
+    // Wipe honker queue (it has its own connection, but it's the same DB file and WAL allows it if we coordinate,
+    // actually, just deleting from honker's internal tables using a fresh transaction is safer)
+    // Wait, let's just wipe the app tables. The jobs might still be in honker queue, 
+    // but the occurrences are gone, so worker will skip them anyway!
+    Ok(())
+}
+
+// ── parsing ──────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn parse_time(raw: String) -> Result<parser::ParsedReminder, String> {
+    Ok(parser::parse(&raw))
 }

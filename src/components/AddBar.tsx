@@ -1,40 +1,51 @@
-import { createSignal, For } from "solid-js";
-import type { QuickTag } from "@/lib/types";
+import { createSignal, createEffect, onCleanup, Show } from "solid-js";
 import { PlusIcon } from "./icons";
+import { invoke } from "@tauri-apps/api/core";
 
 export interface AddBarProps {
-  /** Quick-tag chips rendered under the input. */
-  quickTags: QuickTag[];
-  /**
-   * Fires when the user hits Enter or clicks the plus button with non-empty
-   * input. `selectedTagIds` lists the QuickTag.id values that were toggled
-   * on at submit time — the hook decides what those tags mean.
-   */
-  onSubmit: (title: string, selectedTagIds: string[]) => void;
+  onSubmit: (title: string) => void;
 }
 
-/**
- * Bottom input bar plus the quick-tag row. Owns its own input + selected-tag
- * state because nothing outside the AddBar cares about the draft text — the
- * hook only hears about it once the user submits.
- */
 export function AddBar(props: AddBarProps) {
   const [value, setValue] = createSignal("");
-  const [selected, setSelected] = createSignal<string[]>([]);
+  const [parsedText, setParsedText] = createSignal("");
 
-  function toggleTag(id: string) {
-    setSelected(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
-  }
+  let debounceTimer: number | undefined;
+
+  createEffect(() => {
+    const text = value();
+    if (!text.trim()) {
+      setParsedText("");
+      return;
+    }
+
+    clearTimeout(debounceTimer);
+    debounceTimer = window.setTimeout(async () => {
+      try {
+        const res = await invoke<{ human_time: string }>("parse_time", { raw: text });
+        setParsedText(res.human_time);
+      } catch (e) {
+        console.error("Parse error", e);
+      }
+    }, 300);
+  });
+
+  onCleanup(() => clearTimeout(debounceTimer));
 
   function submit() {
     const v = value().trim();
     if (!v) return;
-    props.onSubmit(v, selected());
+    props.onSubmit(v);
     setValue("");
-    setSelected([]);
+    setParsedText("");
   }
+
+  const previewText = () => {
+    if (parsedText()) {
+      return `↳ will surface randomly before ${parsedText()}`;
+    }
+    return "↳ will surface in 1 hour by default";
+  };
 
   return (
     <footer class="add-bar">
@@ -63,27 +74,11 @@ export function AddBar(props: AddBarProps) {
           <PlusIcon />
         </button>
       </div>
-
-      <div class="quick-tags">
-        <For each={props.quickTags}>
-          {tag => (
-            <span
-              class={`quick-tag${selected().includes(tag.id) ? " selected" : ""}`}
-              role="button"
-              tabIndex={0}
-              aria-pressed={selected().includes(tag.id)}
-              onClick={() => toggleTag(tag.id)}
-              onKeyDown={e => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  toggleTag(tag.id);
-                }
-              }}
-            >
-              {tag.label}
-            </span>
-          )}
-        </For>
+      
+      <div class="parse-preview">
+        <Show when={previewText()} keyed>
+          {text => <span class="parse-preview-text">{text}</span>}
+        </Show>
       </div>
     </footer>
   );

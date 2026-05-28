@@ -281,27 +281,16 @@ body::before {
   position: relative;
   overflow: visible;
 }
-.reminder-card::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 0; bottom: 0; width: 3px;
-  border-radius: 0 2px 2px 0;
-  background: var(--warm-mid);
-  opacity: 0;
-  transition: opacity 0.22s var(--ease-snap), background 0.22s var(--ease-snap);
-}
+
 .reminder-card:hover {
   background: rgba(255,253,248,0.95);
   border-color: var(--warm-mid);
   transform: translateY(-2px);
   box-shadow: 0 4px 16px rgba(92,64,34,0.09);
 }
-.reminder-card:hover::before { opacity: 1; }
 .reminder-card:active { transform: translateY(0px) scale(0.985); }
 .reminder-card.done { opacity: 0.48; }
 .reminder-card.done .reminder-title { text-decoration: line-through; color: var(--text-soft); }
-.reminder-card.urgent::before { opacity: 1; background: var(--red-soft); }
-.reminder-card.urgent { border-color: rgba(201,107,90,0.35); }
 .reminder-card.snooze-open { z-index: 10; }
 
 /* ── COMPLETION SEQUENCE ───────────────────────────────── */
@@ -355,13 +344,7 @@ body::before {
     border-bottom-width: 0;
   }
 }
-/* The amber spine fades out cleanly as the wash takes over */
-.reminder-card.completing::before {
-  animation: spine-fade 500ms var(--ease-accel) forwards;
-}
-@keyframes spine-fade {
-  to { opacity: 0; }
-}
+
 
 /* check circle */
 .check-wrap {

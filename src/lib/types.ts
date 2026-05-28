@@ -1,0 +1,57 @@
+/**
+ * UI-side types for the Yaad reminder app.
+ *
+ * The shape here is intentionally separate from whatever the Rust backend
+ * returns (see `src-tauri/src/commands.rs::ReminderView`). When you wire up
+ * `invoke("list_reminders")`, map the backend payload into `Reminder` inside
+ * the hook — that way the components stay decoupled from the wire format.
+ */
+
+/** Which list is currently visible in the tab strip. */
+export type Tab = "today" | "upcoming" | "done";
+
+/** Tone of the small pill rendered next to a reminder's time. */
+export type TagTone = "warm" | "green" | "red" | "muted";
+
+export interface ReminderTag {
+  /** lowercase display text, e.g. "important" */
+  label: string;
+  tone: TagTone;
+}
+
+export interface Reminder {
+  id: string;
+  /** human-written reminder text, e.g. "reply to email" */
+  title: string;
+  /**
+   * Pre-formatted time label shown in the card meta row, e.g. "10:30 am".
+   * Null when the reminder has no time set yet — the meta row is then hidden.
+   */
+  timeLabel: string | null;
+  /** ms-since-epoch the reminder is meant to fire. Reserved for sorting; the
+   *  card itself only displays `timeLabel`. */
+  fireAt: number | null;
+  /** Whether the user has checked this off. Drives the strike-through state. */
+  done: boolean;
+  /** Marks the card with the red left spine + red dot on the right. */
+  urgent: boolean;
+  /** Optional pill in the meta row. */
+  tag: ReminderTag | null;
+  /** Which tab this reminder lives in. `done` is computed separately. */
+  bucket: Exclude<Tab, "done">;
+}
+
+/** A clickable shortcut shown under the add-bar. */
+export interface QuickTag {
+  id: string;
+  /** Visible text, may include emoji, e.g. "🌅 morning". */
+  label: string;
+  /**
+   * Optional tone hint — used to colour the resulting reminder's tag pill.
+   * If null, selecting this quick tag only flags the next reminder but
+   * doesn't attach a coloured tag pill.
+   */
+  tone: TagTone | null;
+  /** If true, selecting this quick tag flags the next reminder as urgent. */
+  marksUrgent?: boolean;
+}

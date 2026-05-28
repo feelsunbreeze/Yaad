@@ -8,6 +8,7 @@ import {
   requestPermission,
 } from "@tauri-apps/plugin-notification";
 import "./App.css";
+import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,23 +31,23 @@ const NOW = () => Date.now();
 function relativeTime(fire_at: number | null): { label: string; kind: "urgent" | "overdue" | "normal" } {
   if (!fire_at) return { label: "no time set", kind: "normal" };
   const diff = fire_at - NOW();
-  const abs  = Math.abs(diff);
+  const abs = Math.abs(diff);
   const past = diff < 0;
   const mins = Math.floor(abs / 60000);
-  const hrs  = Math.floor(abs / 3600000);
+  const hrs = Math.floor(abs / 3600000);
   const days = Math.floor(abs / 86400000);
 
   let label: string;
   if (past) {
     if (days >= 2) label = `${days} days past`;
     else if (days === 1) label = "from yesterday";
-    else if (hrs >= 1)   label = `${hrs}h ago`;
-    else                 label = mins < 1 ? "just now" : `${mins}m ago`;
+    else if (hrs >= 1) label = `${hrs}h ago`;
+    else label = mins < 1 ? "just now" : `${mins}m ago`;
     return { label, kind: "overdue" };
   }
-  if (mins  <  1) return { label: "now", kind: "urgent" };
-  if (hrs   <  1) return { label: `in ${mins}m`, kind: "urgent" };
-  if (hrs   < 24) return { label: `in ${hrs}h`, kind: hrs < 3 ? "urgent" : "normal" };
+  if (mins < 1) return { label: "now", kind: "urgent" };
+  if (hrs < 1) return { label: `in ${mins}m`, kind: "urgent" };
+  if (hrs < 24) return { label: `in ${hrs}h`, kind: hrs < 3 ? "urgent" : "normal" };
   return { label: `in ${days}d`, kind: "normal" };
 }
 
@@ -60,7 +61,7 @@ function formatCompletedTime(completedAt: number | null): string {
   const diff = Date.now() - completedAt;
   const abs = Math.abs(diff);
   const mins = Math.floor(abs / 60000);
-  const hrs  = Math.floor(abs / 3600000);
+  const hrs = Math.floor(abs / 3600000);
   const days = Math.floor(abs / 86400000);
 
   if (days >= 2) return `resolved ${days} days ago`;
@@ -76,17 +77,17 @@ function sniffTime(raw: string): string | null {
   const s = raw.toLowerCase().trim();
   if (!s) return null;
   const patterns: [RegExp, (m: RegExpMatchArray) => string][] = [
-    [/in (\d+)\s*min(ute)?s?/,            m => `in ${m[1]} min`],
-    [/in (\d+)\s*h(our)?s?/,              m => `in ${m[1]}h`],
-    [/in (\d+)\s*day(s)?/,               m => `in ${m[1]}d`],
-    [/tonight/,                            () => "tonight ~9 PM"],
-    [/tomorrow/,                           () => "tomorrow ~9 AM"],
-    [/noon/,                               () => "today at noon"],
-    [/morning/,                            () => "tomorrow morning"],
-    [/evening/,                            () => "this evening"],
+    [/in (\d+)\s*min(ute)?s?/, m => `in ${m[1]} min`],
+    [/in (\d+)\s*h(our)?s?/, m => `in ${m[1]}h`],
+    [/in (\d+)\s*day(s)?/, m => `in ${m[1]}d`],
+    [/tonight/, () => "tonight ~9 PM"],
+    [/tomorrow/, () => "tomorrow ~9 AM"],
+    [/noon/, () => "today at noon"],
+    [/morning/, () => "tomorrow morning"],
+    [/evening/, () => "this evening"],
     [/(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/, m => `this ${m[1]}`],
-    [/(\d{1,2}):(\d{2})\s*(am|pm)/,      m => `at ${m[1]}:${m[2]} ${m[3].toUpperCase()}`],
-    [/(\d{1,2})\s*(am|pm)/,              m => `at ${m[1]} ${m[2].toUpperCase()}`],
+    [/(\d{1,2}):(\d{2})\s*(am|pm)/, m => `at ${m[1]}:${m[2]} ${m[3].toUpperCase()}`],
+    [/(\d{1,2})\s*(am|pm)/, m => `at ${m[1]} ${m[2].toUpperCase()}`],
   ];
   for (const [re, fmt] of patterns) {
     const m = s.match(re);
@@ -126,16 +127,17 @@ export default function App() {
   const [reminders, setReminders] = createSignal<ReminderView[]>([]);
   const [completedReminders, setCompletedReminders] = createSignal<ReminderView[]>([]);
   const [currentTab, setCurrentTab] = createSignal<"active" | "completed">("active");
-  const [raw, setRaw]             = createSignal("");
-  const [overlay, setOverlay]     = createSignal(false);
-  const [saving, setSaving]       = createSignal(false);
+  const [raw, setRaw] = createSignal("");
+  const [overlay, setOverlay] = createSignal(false);
+  const [saving, setSaving] = createSignal(false);
   const [dissolving, setDissolving] = createSignal(new Set<string>());
   const [snoozeFor, setSnoozeFor] = createSignal<string | null>(null);
+  const [showAlert, setShowAlert] = createSignal(false);
 
   const chip = createMemo(() => sniffTime(raw()));
 
   // ── Partitioned lists ─────────────────────────────────────────────────────
-  const nowSection      = createMemo(() => reminders().filter(r => isUrgentSection(r.fire_at)));
+  const nowSection = createMemo(() => reminders().filter(r => isUrgentSection(r.fire_at)));
   const upcomingSection = createMemo(() => reminders().filter(r => !isUrgentSection(r.fire_at)));
 
   // ── Data ──────────────────────────────────────────────────────────────────
@@ -154,6 +156,10 @@ export default function App() {
   }
 
   async function triggerTestNotification() {
+    // Show the animated in-app alert
+    setShowAlert(true);
+    setTimeout(() => setShowAlert(false), 3000);
+
     // Make sure the OS will accept our toast. No in-app fallback rendering —
     // if Windows refuses the toast, we want to know, not paper over it.
     const ok = await ensureNotificationPermission();
@@ -181,7 +187,7 @@ export default function App() {
   // ── Complete ──────────────────────────────────────────────────────────────
   async function complete(id: string) {
     fade(id);
-    try { await invoke("complete", { id }); } catch {}
+    try { await invoke("complete", { id }); } catch { }
     setTimeout(() => { load(); loadCompleted(); }, 300);
   }
 
@@ -189,7 +195,7 @@ export default function App() {
   async function snooze(id: string, preset: SnoozePreset) {
     setSnoozeFor(null);
     fade(id);
-    try { await invoke("snooze", { id, preset }); } catch {}
+    try { await invoke("snooze", { id, preset }); } catch { }
     setTimeout(() => { load(); loadCompleted(); }, 300);
   }
 
@@ -278,7 +284,7 @@ export default function App() {
             >Later</button>
             <Show when={snoozeFor() === p.r.id}>
               <div class="snooze-menu">
-                {([ ["1h", "In 1 hour", "1"], ["tonight", "Tonight", "T"], ["tomorrow", "Tomorrow", "2"], ["next_week", "Next week", "W"] ] as const).map(([preset, label, k]) => (
+                {([["1h", "In 1 hour", "1"], ["tonight", "Tonight", "T"], ["tomorrow", "Tomorrow", "2"], ["next_week", "Next week", "W"]] as const).map(([preset, label, k]) => (
                   <button class="snooze-opt" onClick={() => snooze(p.r.id, preset)}>
                     {label}
                     <span class="snooze-opt-key">{k}</span>
@@ -327,6 +333,19 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {/* ── Test Alert ── */}
+      <Show when={showAlert()}>
+        <div class="px-7 pt-4 animate-in fade-in slide-in-from-top-4 duration-300 zoom-in-95 ease-out">
+          <Alert>
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <AlertTitle>System Notice</AlertTitle>
+            <AlertDescription>
+              The shadcn-solid components have been successfully installed and configured.
+            </AlertDescription>
+          </Alert>
+        </div>
+      </Show>
 
       {/* ── Tab Switcher ── */}
       <div class="navigation-tabs">

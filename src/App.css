@@ -3,7 +3,9 @@
    dependency, plays nicely with the tightened CSP in tauri.conf.json, and
    keeps the app typographically correct offline. */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
 :root {
+  /* ── Palette ─────────────────────────────────────────── */
   --cream:    #F5EFE0;
   --cream-2:  #EDE4CE;
   --cream-3:  #E3D5B8;
@@ -16,12 +18,37 @@
   --text-mute:#8A6E4B;
   --text-soft:#B09070;
   --red-soft: #C96B5A;
+  --red-deep: #b85544;
   --green-soft:#6E9B7A;
-  --ease: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --green-deep:#5e8567;
+
+  /* ── Type ────────────────────────────────────────────── */
   --font-display: 'Lora', Georgia, serif;
-  --font-body: 'DM Sans', system-ui, sans-serif;
+  --font-body:    'DM Sans', system-ui, sans-serif;
+
+  /* ── Easing curves — each one has a job ──────────────── */
+  /* Spring overshoot. For affirmative/playful: hover lifts, popover bloom,
+     button presses, "sproing" moments. */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Standard interface motion. Symmetric and unobtrusive — use as the
+     default for transforms, colors, and most hover transitions. */
+  --ease-snap:   cubic-bezier(0.4, 0, 0.2, 1);
+  /* Decelerate: smooth landing for incoming elements. Use for fade-ins,
+     content arriving, the start of a sequence. */
+  --ease-decel:  cubic-bezier(0, 0, 0.2, 1);
+  /* Accelerate: gathering pace as something leaves. Use for fade-outs,
+     content departing, the end of a sequence. */
+  --ease-accel:  cubic-bezier(0.4, 0, 1, 1);
+  /* Smooth ease-in-out. Symmetric, for color washes that travel both
+     directions equally. */
+  --ease-smooth: cubic-bezier(0.45, 0, 0.55, 1);
+
+  /* Legacy aliases — kept so existing rules below continue to read as
+     intended. Prefer the named tokens above for new code. */
+  --ease:     var(--ease-spring);
+  --ease-out: var(--ease-decel);
 }
+
 html, body {
   height: 100%;
   background: var(--cream);
@@ -32,6 +59,7 @@ html, body {
   user-select: none;
   -webkit-font-smoothing: antialiased;
 }
+
 body::before {
   content: '';
   position: fixed;
@@ -42,6 +70,7 @@ body::before {
   pointer-events: none;
   z-index: 0;
 }
+
 .app {
   position: relative;
   z-index: 1;
@@ -52,10 +81,11 @@ body::before {
   margin: 0 auto;
   padding: 0 1.5rem;
 }
-/* ── HEADER ── */
+
+/* ── HEADER ─────────────────────────────────────────────── */
 .header {
   padding: 2rem 0 1.5rem;
-  animation: rise 0.7s var(--ease-out) both;
+  animation: rise 0.7s var(--ease-decel) both;
 }
 .header-top {
   display: flex;
@@ -81,6 +111,7 @@ body::before {
   margin-top: 0.35rem;
   padding-top: 0.75rem;
 }
+
 .icon-btn {
   width: 38px; height: 38px;
   border-radius: 50%;
@@ -88,16 +119,31 @@ body::before {
   border: 1.5px solid var(--cream-3);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
-  transition: background 0.2s, transform 0.2s var(--ease), border-color 0.2s;
   flex-shrink: 0;
+  transition:
+    background 0.22s var(--ease-snap),
+    border-color 0.22s var(--ease-snap),
+    transform 0.22s var(--ease-spring);
 }
-.icon-btn:hover { background: var(--cream-3); border-color: var(--warm-mid); transform: scale(1.08); }
+.icon-btn:hover {
+  background: var(--cream-3);
+  border-color: var(--warm-mid);
+  transform: scale(1.08);
+}
 .icon-btn:active { transform: scale(0.94); }
-.icon-btn svg { width: 17px; height: 17px; stroke: var(--text-mute); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-/* ── PROGRESS BAR ── */
+.icon-btn svg {
+  width: 17px; height: 17px;
+  stroke: var(--text-mute);
+  fill: none; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+  transition: stroke 0.22s var(--ease-snap);
+}
+.icon-btn:hover svg { stroke: var(--brown); }
+
+/* ── PROGRESS BAR ───────────────────────────────────────── */
 .progress-wrap {
   margin-top: 1.25rem;
-  animation: rise 0.7s 0.1s var(--ease-out) both;
+  animation: rise 0.7s 0.1s var(--ease-decel) both;
 }
 .progress-label {
   display: flex; justify-content: space-between;
@@ -109,57 +155,146 @@ body::before {
   border-radius: 99px; overflow: hidden;
 }
 .progress-fill {
-  height: 100%; background: linear-gradient(90deg, var(--amber) 0%, var(--amber-2) 100%);
-  border-radius: 99px; animation: fill-in 1.1s 0.4s var(--ease-out) both;
+  height: 100%;
+  background: linear-gradient(90deg, var(--amber) 0%, var(--amber-2) 100%);
+  border-radius: 99px;
+  animation: fill-in 1.1s 0.4s var(--ease-decel) both;
   transform-origin: left;
+  transition: width 0.5s var(--ease-snap);
 }
 @keyframes fill-in {
   from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
+  to   { transform: scaleX(1); }
 }
-/* ── TABS ── */
+
+/* ── TABS ───────────────────────────────────────────────── */
 .tabs {
   display: flex; gap: 0.25rem; padding: 0.3rem;
   background: var(--cream-2); border-radius: 12px;
-  margin-top: 1.25rem; animation: rise 0.7s 0.15s var(--ease-out) both;
+  margin-top: 1.25rem;
+  animation: rise 0.7s 0.15s var(--ease-decel) both;
 }
 .tab {
   flex: 1; padding: 0.4rem; border-radius: 9px;
   text-align: center; font-family: var(--font-body);
   font-size: 0.72rem; font-weight: 400; letter-spacing: 0.03em;
   color: var(--text-soft); cursor: pointer;
-  transition: background 0.25s var(--ease-out), color 0.25s, transform 0.2s var(--ease);
+  transition:
+    background 0.25s var(--ease-decel),
+    color 0.25s var(--ease-snap),
+    transform 0.2s var(--ease-spring),
+    box-shadow 0.25s var(--ease-snap);
 }
 .tab:hover { color: var(--text-mute); }
 .tab:active { transform: scale(0.96); }
-.tab.active { background: var(--cream); color: var(--brown); font-weight: 500; box-shadow: 0 1px 4px rgba(92,64,34,0.10); }
-/* ── REMINDER LIST ── */
-.list-wrap {
-  overflow-y: auto; overflow-x: hidden; padding: 0.25rem 0 1rem; scrollbar-width: none;
+.tab.active {
+  background: var(--cream);
+  color: var(--brown);
+  font-weight: 500;
+  box-shadow: 0 1px 4px rgba(92,64,34,0.10);
 }
-.list-wrap::-webkit-scrollbar { display: none; }
+
+/* ── REMINDER LIST ──────────────────────────────────────── */
+.list-wrap {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.25rem 0 1rem;
+  position: relative;
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(201, 180, 138, 0.5) transparent;
+}
+/* Webkit (Tauri's WebView is webkit-based on macOS/Linux, Chromium on Windows
+   — both honour these). Thin, rounded, subtle thumb in the warm-mid palette,
+   transparent track. Darkens on hover. */
+.list-wrap::-webkit-scrollbar {
+  width: 5px;
+}
+.list-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+.list-wrap::-webkit-scrollbar-thumb {
+  background: rgba(201, 180, 138, 0.45);
+  border-radius: 99px;
+  transition: background 200ms var(--ease-snap);
+}
+.list-wrap::-webkit-scrollbar-thumb:hover {
+  background: var(--warm-mid);
+}
+.list-wrap::-webkit-scrollbar-thumb:active {
+  background: var(--amber);
+}
+
+/* Bottom scroll-shadow — a faint gradient that pins to the bottom edge of
+   the scrolling viewport (position: sticky) and fades in whenever there's
+   more content below. Driven by ReminderList.tsx via the `.show-scroll-shadow`
+   class. Hidden cleanly when at the bottom or there's no overflow. */
+.list-wrap::after {
+  content: '';
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  margin-top: -28px;
+  background: linear-gradient(
+    to top,
+    var(--cream) 0%,
+    rgba(245, 239, 224, 0.65) 45%,
+    transparent 100%
+  );
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 240ms var(--ease-snap);
+  display: block;
+  z-index: 5;
+}
+.list-wrap.show-scroll-shadow::after {
+  opacity: 1;
+}
+
 .section-label {
   font-size: 0.67rem; font-weight: 500; letter-spacing: 0.1em;
   text-transform: uppercase; color: var(--text-soft);
-  margin: 1.2rem 0 0.6rem 0.25rem; opacity: 0;
-  animation: rise 0.5s var(--ease-out) forwards;
+  margin: 1.2rem 0 0.6rem 0.25rem;
+  opacity: 0;
+  animation: rise 0.5s var(--ease-decel) forwards;
 }
+
+/* ── REMINDER CARD ──────────────────────────────────────── */
 .reminder-card {
   display: flex; align-items: center; gap: 0.85rem;
-  padding: 0.9rem 1rem; background: rgba(255,252,245,0.85);
-  border: 1.5px solid var(--cream-3); border-radius: 14px;
-  margin-bottom: 0.55rem; cursor: pointer; opacity: 0;
-  transform: translateY(14px); animation: rise 0.55s var(--ease-out) forwards;
-  transition: background 0.2s, border-color 0.2s, transform 0.25s var(--ease), box-shadow 0.2s;
-  position: relative; overflow: visible;
+  padding: 0.9rem 1rem;
+  background: rgba(255,252,245,0.85);
+  border: 1.5px solid var(--cream-3);
+  border-radius: 14px;
+  margin-bottom: 0.55rem;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(14px);
+  animation: rise 0.55s var(--ease-decel) forwards;
+  transition:
+    background 0.22s var(--ease-snap),
+    border-color 0.22s var(--ease-snap),
+    transform 0.25s var(--ease-spring),
+    box-shadow 0.22s var(--ease-snap);
+  position: relative;
+  overflow: visible;
 }
 .reminder-card::before {
-  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-  border-radius: 0 2px 2px 0; background: var(--warm-mid); opacity: 0; transition: opacity 0.2s;
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0; width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--warm-mid);
+  opacity: 0;
+  transition: opacity 0.22s var(--ease-snap), background 0.22s var(--ease-snap);
 }
 .reminder-card:hover {
-  background: rgba(255,253,248,0.95); border-color: var(--warm-mid);
-  transform: translateY(-2px); box-shadow: 0 4px 16px rgba(92,64,34,0.09);
+  background: rgba(255,253,248,0.95);
+  border-color: var(--warm-mid);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(92,64,34,0.09);
 }
 .reminder-card:hover::before { opacity: 1; }
 .reminder-card:active { transform: translateY(0px) scale(0.985); }
@@ -168,56 +303,357 @@ body::before {
 .reminder-card.urgent::before { opacity: 1; background: var(--red-soft); }
 .reminder-card.urgent { border-color: rgba(201,107,90,0.35); }
 .reminder-card.snooze-open { z-index: 10; }
+
+/* ── COMPLETION SEQUENCE ───────────────────────────────── */
+/* Multi-stage: check draws → color washes to success → hold → fade +
+   collapse. The card's natural height is pinned to --natural-height by
+   ReminderCard.tsx so the collapse animates precisely from "actual height"
+   to 0, regardless of how tall the title is.
+
+   Phases (relative to 1250ms total):
+     0-40%   : check draws (separate animation), card holds in cream
+     40-62%  : color washes to muted green; box-shadow blooms warmly
+     62-100% : fade + collapse to height 0, siblings slide up into the gap
+
+   Hover-state rules are explicitly suppressed via `pointer-events: none` so
+   accidental cursor movement during the animation doesn't fight the wash. */
+.reminder-card.completing {
+  pointer-events: none;
+  overflow: hidden;
+  animation: card-complete 1250ms var(--ease-snap) forwards;
+}
+@keyframes card-complete {
+  0% {
+    background: rgba(255,252,245,0.85);
+    border-color: var(--cream-3);
+    box-shadow: 0 0 0 transparent;
+    max-height: var(--natural-height, 6rem);
+    opacity: 1;
+  }
+  35% {
+    background: rgba(255,252,245,0.85);
+    border-color: var(--cream-3);
+    box-shadow: 0 0 0 transparent;
+  }
+  62% {
+    background: rgba(110,155,122,0.16);
+    border-color: rgba(110,155,122,0.5);
+    box-shadow: 0 4px 20px rgba(110,155,122,0.18);
+    max-height: var(--natural-height, 6rem);
+    opacity: 1;
+  }
+  100% {
+    background: rgba(110,155,122,0);
+    border-color: transparent;
+    box-shadow: 0 0 0 transparent;
+    max-height: 0;
+    opacity: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-bottom: 0;
+    border-top-width: 0;
+    border-bottom-width: 0;
+  }
+}
+/* The amber spine fades out cleanly as the wash takes over */
+.reminder-card.completing::before {
+  animation: spine-fade 500ms var(--ease-accel) forwards;
+}
+@keyframes spine-fade {
+  to { opacity: 0; }
+}
+
 /* check circle */
 .check-wrap {
-  flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
-  border: 1.8px solid var(--cream-3); background: var(--cream-2);
+  flex-shrink: 0;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 1.8px solid var(--cream-3);
+  background: var(--cream-2);
   display: flex; align-items: center; justify-content: center;
-  transition: background 0.25s var(--ease), border-color 0.25s, transform 0.25s var(--ease);
+  transition:
+    background 0.25s var(--ease-snap),
+    border-color 0.25s var(--ease-snap),
+    transform 0.25s var(--ease-spring);
 }
 .reminder-card:hover .check-wrap { border-color: var(--amber); }
-.check-wrap.checked { background: var(--amber); border-color: var(--amber); }
-.check-wrap svg { width: 13px; height: 13px; stroke: var(--cream); fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0; transition: opacity 0.2s; }
+.check-wrap.checked {
+  background: var(--amber);
+  border-color: var(--amber);
+}
+.check-wrap svg {
+  width: 13px; height: 13px;
+  stroke: var(--cream);
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round;
+  opacity: 0;
+  transition: opacity 0.2s var(--ease-snap);
+}
 .check-wrap.checked svg { opacity: 1; }
+
+/* During the completion animation, the check circle blooms (a small
+   over-shoot scale) and the polyline strokes in via stroke-dashoffset —
+   "like ink being drawn with a fine pen". Both timed to land in phase 1
+   of the parent card-complete sequence. */
+.reminder-card.completing .check-wrap {
+  background: var(--amber);
+  border-color: var(--amber);
+  animation: check-bloom 600ms var(--ease-spring) forwards;
+}
+@keyframes check-bloom {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.18); }
+  100% { transform: scale(1.05); }
+}
+.reminder-card.completing .check-wrap svg {
+  opacity: 1;
+  stroke-dasharray: 25;
+  stroke-dashoffset: 25;
+  animation: draw-check 480ms var(--ease-decel) 80ms forwards;
+}
+@keyframes draw-check {
+  to { stroke-dashoffset: 0; }
+}
+
 .reminder-body { flex: 1; min-width: 0; }
-.reminder-title { font-family: var(--font-body); font-size: 0.88rem; font-weight: 400; color: var(--text-main); line-height: 1.3; transition: color 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.reminder-meta { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.25rem; }
-.meta-time { font-size: 0.7rem; color: var(--text-soft); font-weight: 300; display: flex; align-items: center; gap: 0.25rem; }
-.meta-time svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
-.meta-tag { font-size: 0.63rem; padding: 0.15rem 0.5rem; border-radius: 99px; letter-spacing: 0.03em; font-weight: 400; }
-.tag-warm   { background: rgba(184,146,74,0.14); color: var(--amber-2); }
+.reminder-title {
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  font-weight: 400;
+  color: var(--text-main);
+  line-height: 1.3;
+  transition: color 0.22s var(--ease-snap);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reminder-meta {
+  display: flex; align-items: center; gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+.meta-time {
+  font-size: 0.7rem;
+  color: var(--text-soft);
+  font-weight: 300;
+  display: flex; align-items: center; gap: 0.25rem;
+}
+.meta-time svg {
+  width: 11px; height: 11px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+}
+.meta-tag {
+  font-size: 0.63rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 99px;
+  letter-spacing: 0.03em;
+  font-weight: 400;
+}
+.tag-warm   { background: rgba(184,146,74,0.14);  color: var(--amber-2); }
 .tag-green  { background: rgba(110,155,122,0.14); color: var(--green-soft); }
-.tag-red    { background: rgba(201,107,90,0.14); color: var(--red-soft); }
-.tag-muted  { background: var(--cream-3); color: var(--text-soft); }
-.reminder-right { flex-shrink: 0; display: flex; align-items: center; gap: 0.4rem; }
+.tag-red    { background: rgba(201,107,90,0.14);  color: var(--red-soft); }
+.tag-muted  { background: var(--cream-3);         color: var(--text-soft); }
+.reminder-right {
+  flex-shrink: 0; display: flex; align-items: center; gap: 0.4rem;
+}
 .dot { width: 7px; height: 7px; border-radius: 50%; }
 .dot-red { background: var(--red-soft); }
-/* completed-card meta time, italicised */
 .completed-time { font-style: italic; color: var(--text-soft); }
-/* ── EMPTY STATE ── */
-.empty-state { display: flex; flex-direction: column; align-items: center; padding: 3rem 0; gap: 0.75rem; opacity: 0; animation: rise 0.6s 0.3s var(--ease-out) forwards; }
-.empty-icon { width: 52px; height: 52px; background: var(--cream-2); border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1.5px solid var(--cream-3); }
-.empty-icon svg { width: 24px; height: 24px; stroke: var(--warm-mid); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.empty-text { font-family: var(--font-display); font-style: italic; color: var(--text-soft); font-size: 0.92rem; }
-/* ── BOTTOM ADD BAR ── */
-.add-bar { padding: 0.85rem 0 2rem; animation: rise 0.6s 0.3s var(--ease-out) both; }
-.add-input-wrap { display: flex; align-items: center; gap: 0.65rem; background: rgba(255,252,245,0.9); border: 1.5px solid var(--cream-3); border-radius: 14px; padding: 0.65rem 0.65rem 0.65rem 1rem; transition: border-color 0.25s, box-shadow 0.25s; }
-.add-input-wrap:focus-within { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(184,146,74,0.12); }
-.add-input { flex: 1; background: none; border: none; outline: none; font-family: var(--font-body); font-size: 0.88rem; font-weight: 300; color: var(--text-main); caret-color: var(--amber); }
-.add-input::placeholder { color: var(--text-soft); font-style: italic; }
-.add-btn { width: 32px; height: 32px; border-radius: 9px; background: var(--amber); border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.2s, transform 0.2s var(--ease); flex-shrink: 0; }
+
+/* ── EMPTY STATE ───────────────────────────────────────── */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 3rem 0; gap: 0.75rem;
+  opacity: 0;
+  animation: rise 0.6s 0.3s var(--ease-decel) forwards;
+}
+.empty-icon {
+  width: 52px; height: 52px;
+  background: var(--cream-2);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--cream-3);
+}
+.empty-icon svg {
+  width: 24px; height: 24px;
+  stroke: var(--warm-mid);
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.empty-text {
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--text-soft);
+  font-size: 0.92rem;
+}
+
+/* ── BOTTOM ADD BAR ────────────────────────────────────── */
+.add-bar {
+  padding: 0.85rem 0 2rem;
+  animation: rise 0.6s 0.3s var(--ease-decel) both;
+}
+.add-input-wrap {
+  display: flex; align-items: center; gap: 0.65rem;
+  background: rgba(255,252,245,0.9);
+  border: 1.5px solid var(--cream-3);
+  border-radius: 14px;
+  padding: 0.65rem 0.65rem 0.65rem 1rem;
+  transition:
+    border-color 0.25s var(--ease-snap),
+    box-shadow 0.25s var(--ease-snap);
+}
+.add-input-wrap:focus-within {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 3px rgba(184,146,74,0.12);
+}
+.add-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  font-weight: 300;
+  color: var(--text-main);
+  caret-color: var(--amber);
+}
+.add-input::placeholder {
+  color: var(--text-soft);
+  font-style: italic;
+}
+.add-btn {
+  width: 32px; height: 32px;
+  border-radius: 9px;
+  background: var(--amber);
+  border: none;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background 0.2s var(--ease-snap),
+    transform 0.22s var(--ease-spring);
+}
 .add-btn:hover { background: var(--amber-2); transform: scale(1.08); }
 .add-btn:active { transform: scale(0.94); }
-.add-btn svg { width: 16px; height: 16px; stroke: var(--cream); fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.quick-tags { display: flex; gap: 0.4rem; margin-top: 0.6rem; padding-left: 0.1rem; flex-wrap: wrap; }
-.quick-tag { font-size: 0.67rem; padding: 0.25rem 0.65rem; border-radius: 99px; border: 1px solid var(--cream-3); color: var(--text-soft); cursor: pointer; transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s var(--ease); background: transparent; }
-.quick-tag:hover { background: var(--cream-2); border-color: var(--warm-mid); color: var(--text-mute); transform: scale(1.04); }
-.quick-tag:active { transform: scale(0.96); }
-.quick-tag.selected { background: var(--amber); border-color: var(--amber); color: var(--cream); }
+.add-btn svg {
+  width: 16px; height: 16px;
+  stroke: var(--cream);
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
 
-/* ── SNOOZE AFFORDANCE ── */
-/* Always-visible "later" button on each pending card. ADHD-friendly: not
-   hover-revealed — discoverable at rest. */
+/* ── ADDBAR PARSE PREVIEW ──────────────────────────────── */
+.parse-preview {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  color: var(--text-soft);
+  margin-top: 0.5rem;
+  margin-left: 0.5rem;
+  font-style: italic;
+  animation: rise 0.3s var(--ease-decel) both;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0;
+}
+.parse-prefix {
+  /* The static prefix never re-animates — only the token swaps. */
+  flex-shrink: 0;
+}
+.parse-token-wrap {
+  position: relative;
+  display: inline-block;
+  vertical-align: baseline;
+  /* Wrap takes the width of the incoming token; outgoing is absolutely
+     positioned so it doesn't push layout. */
+}
+.parse-token {
+  display: inline-block;
+  white-space: nowrap;
+  font-style: italic;
+  color: var(--amber-2);
+}
+.parse-token-in {
+  /* Each value change re-mounts this span (via keyed <Show>) so the
+     keyframe re-triggers — text content changes alone don't restart CSS
+     animations. */
+  animation: token-in 240ms var(--ease-decel) both;
+}
+.parse-token-out {
+  position: absolute;
+  left: 0;
+  top: 0;
+  animation: token-out 240ms var(--ease-accel) both;
+  pointer-events: none;
+}
+@keyframes token-in {
+  0%   { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes token-out {
+  0%   { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+
+/* ── QUICK TAGS (legacy — kept for backwards compat) ─── */
+.quick-tags {
+  display: flex; gap: 0.4rem;
+  margin-top: 0.6rem;
+  padding-left: 0.1rem;
+  flex-wrap: wrap;
+}
+.quick-tag {
+  font-size: 0.67rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 99px;
+  border: 1px solid var(--cream-3);
+  color: var(--text-soft);
+  cursor: pointer;
+  background: transparent;
+  transition:
+    background 0.2s var(--ease-snap),
+    border-color 0.2s var(--ease-snap),
+    color 0.2s var(--ease-snap),
+    transform 0.22s var(--ease-spring);
+}
+.quick-tag:hover {
+  background: var(--cream-2);
+  border-color: var(--warm-mid);
+  color: var(--text-mute);
+  transform: scale(1.04);
+}
+.quick-tag:active { transform: scale(0.96); }
+.quick-tag.selected {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: var(--cream);
+}
+
+/* ── ANIMATIONS ────────────────────────────────────────── */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.card-pop { animation: card-pop 0.4s var(--ease-spring) both !important; }
+@keyframes card-pop {
+  0%   { opacity: 0; transform: scale(0.92) translateY(8px); }
+  100% { opacity: 1; transform: scale(1)    translateY(0); }
+}
+.check-bounce { animation: check-bounce 0.35s var(--ease-spring) !important; }
+@keyframes check-bounce {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(0.8); }
+  70%  { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+/* ── SNOOZE AFFORDANCE ─────────────────────────────────── */
 .action-btn {
   background: transparent;
   border: 1px solid var(--cream-3);
@@ -229,7 +665,11 @@ body::before {
   font-weight: 400;
   letter-spacing: 0.02em;
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s var(--ease);
+  transition:
+    background 0.2s var(--ease-snap),
+    border-color 0.2s var(--ease-snap),
+    color 0.2s var(--ease-snap),
+    transform 0.22s var(--ease-spring);
 }
 .action-btn:hover {
   background: var(--cream-2);
@@ -258,7 +698,7 @@ body::before {
   padding: 0.35rem;
   min-width: 9rem;
   box-shadow: 0 8px 28px rgba(92, 64, 34, 0.12);
-  animation: popover-in 0.22s var(--ease-out) both;
+  animation: popover-in 220ms var(--ease-spring) both;
 }
 @keyframes popover-in {
   from { opacity: 0; transform: translateY(-4px) scale(0.96); }
@@ -275,7 +715,10 @@ body::before {
   border-radius: 8px;
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, transform 0.15s var(--ease);
+  transition:
+    background 0.18s var(--ease-snap),
+    color 0.18s var(--ease-snap),
+    transform 0.18s var(--ease-spring);
 }
 .snooze-option:hover {
   background: var(--cream-2);
@@ -283,9 +726,7 @@ body::before {
 }
 .snooze-option:active { transform: scale(0.98); }
 
-/* ── ERROR BANNER ── */
-/* Sits between header and the list when an invoke fails. The same banner
-   surfaces test-notification failures from App.tsx via raiseError(). */
+/* ── ERROR BANNER ──────────────────────────────────────── */
 .error-banner {
   margin: 0 0 0.5rem;
   padding: 0.55rem 0.85rem;
@@ -298,7 +739,7 @@ body::before {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  animation: rise 0.4s var(--ease-out) both;
+  animation: rise 0.4s var(--ease-decel) both;
 }
 .error-banner-text { flex: 1; }
 .error-banner-dismiss {
@@ -310,30 +751,16 @@ body::before {
   line-height: 1;
   padding: 0 0.25rem;
   opacity: 0.7;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s var(--ease-snap);
 }
 .error-banner-dismiss:hover { opacity: 1; }
 
-/* ── ANIMATIONS ── */
-@keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-.card-pop { animation: card-pop 0.4s var(--ease) both !important; }
-@keyframes card-pop { 0% { opacity: 0; transform: scale(0.92) translateY(8px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
-.check-bounce { animation: check-bounce 0.35s var(--ease) !important; }
-@keyframes check-bounce { 0% { transform: scale(1); } 40% { transform: scale(0.8); } 70% { transform: scale(1.18); } 100% { transform: scale(1); } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
-
-/* ── ADDBAR PARSE PREVIEW ── */
-.parse-preview {
-  font-family: var(--font-body);
-  font-size: 0.75rem;
-  color: var(--text-soft);
-  margin-top: 0.5rem;
-  margin-left: 0.5rem;
-  font-style: italic;
-  animation: rise 0.3s var(--ease-out) both;
-}
-
-/* ── MODALS & OVERLAYS ── */
+/* ── MODALS & OVERLAYS ─────────────────────────────────── */
+/* The .modal-overlay + .modal-content pair is rendered by the reusable
+   Modal shell (src/components/Modal.tsx). The shell adds a `.closing`
+   class on the overlay during the exit phase and unmounts after
+   `exitDuration` ms — so both the entrance and the departure get
+   intentional CSS keyframes rather than snapping. */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -345,23 +772,42 @@ body::before {
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  animation: fade-in 0.3s var(--ease-out) both;
+  animation: backdrop-in 260ms var(--ease-decel) both;
 }
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+@keyframes backdrop-in {
+  from { opacity: 0; backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0); }
+  to   { opacity: 1; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+}
+.modal-overlay.closing {
+  animation: backdrop-out 240ms var(--ease-accel) both;
+}
+@keyframes backdrop-out {
+  from { opacity: 1; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  to   { opacity: 0; backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0); }
 }
 
 .modal-content {
-  background: rgba(255, 253, 248, 0.95);
+  background: rgba(255, 253, 248, 0.96);
   border: 1.5px solid var(--cream-3);
   border-radius: 20px;
   width: 100%;
   max-width: 400px;
   padding: 1.5rem;
-  box-shadow: 0 12px 40px rgba(92, 64, 34, 0.12);
-  animation: rise 0.4s var(--ease-out) both;
+  box-shadow: 0 12px 40px rgba(92, 64, 34, 0.14);
+  animation: modal-in 280ms var(--ease-spring) both;
 }
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.94) translateY(8px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+.modal-overlay.closing .modal-content {
+  animation: modal-out 240ms var(--ease-accel) both;
+}
+@keyframes modal-out {
+  from { opacity: 1; transform: scale(1)    translateY(0); }
+  to   { opacity: 0; transform: scale(0.96) translateY(4px); }
+}
+
 .modal-header {
   display: flex;
   align-items: center;
@@ -374,17 +820,68 @@ body::before {
   font-weight: 500;
   color: var(--brown-2);
 }
+
+/* Themed close button with a small playful rotation on hover. The × pivots
+   90° as the user approaches it — subtle but conveys "this dismisses". */
 .modal-close {
+  width: 32px;
+  height: 32px;
   background: transparent;
   border: none;
-  font-size: 1.5rem;
+  font-size: 1.4rem;
+  line-height: 1;
   color: var(--text-soft);
+  border-radius: 50%;
   cursor: pointer;
-  transition: color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    color 0.18s var(--ease-snap),
+    background 0.18s var(--ease-snap),
+    transform 0.24s var(--ease-spring);
 }
-.modal-close:hover { color: var(--red-soft); }
+.modal-close:hover {
+  color: var(--red-soft);
+  background: rgba(201, 107, 90, 0.08);
+  transform: scale(1.08) rotate(90deg);
+}
+.modal-close:active {
+  transform: scale(0.94) rotate(90deg);
+}
 
-/* ── SETTINGS ── */
+/* ── CONFIRM DIALOG ────────────────────────────────────── */
+/* Sits on top of the Modal shell. Smaller width, tighter header, two
+   action buttons aligned right with a destructive solid variant for the
+   affirmative side. */
+.modal-content.modal-confirm {
+  max-width: 360px;
+  padding: 1.4rem 1.4rem 1.25rem;
+}
+.modal-confirm .modal-header {
+  margin-bottom: 0.85rem;
+}
+.modal-confirm .modal-header h2 {
+  font-size: 1.2rem;
+}
+.modal-message {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 300;
+  color: var(--text-mute);
+  line-height: 1.55;
+  margin-bottom: 1.25rem;
+}
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+.modal-actions .settings-btn {
+  min-width: 80px;
+}
+
+/* ── SETTINGS ──────────────────────────────────────────── */
 .settings-section {
   margin-bottom: 1.5rem;
 }
@@ -418,15 +915,17 @@ body::before {
   font-size: 0.9rem;
   color: var(--text-main);
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.22s var(--ease-snap), box-shadow 0.22s var(--ease-snap);
 }
 .settings-input:focus, .settings-select:focus {
   border-color: var(--amber);
+  box-shadow: 0 0 0 3px rgba(184, 146, 74, 0.12);
 }
 .settings-slider {
   width: 100%;
   accent-color: var(--amber);
 }
+
 .settings-btn {
   background: var(--cream-2);
   border: 1.5px solid var(--cream-3);
@@ -437,27 +936,70 @@ body::before {
   font-weight: 500;
   color: var(--text-main);
   cursor: pointer;
-  transition: background 0.2s, transform 0.2s var(--ease);
+  transition:
+    background 0.2s var(--ease-snap),
+    border-color 0.2s var(--ease-snap),
+    color 0.2s var(--ease-snap),
+    transform 0.22s var(--ease-spring),
+    box-shadow 0.22s var(--ease-snap);
 }
 .settings-btn:hover {
   background: var(--cream-3);
+  border-color: var(--warm-mid);
   transform: scale(1.02);
 }
 .settings-btn:active { transform: scale(0.96); }
+
+/* Outlined-danger — used in the Settings panel for the factory-reset
+   trigger. Restrained, not loud. */
 .settings-btn.danger {
+  background: rgba(201, 107, 90, 0.04);
   color: var(--red-soft);
-  border-color: rgba(201, 107, 90, 0.3);
+  border-color: rgba(201, 107, 90, 0.35);
 }
 .settings-btn.danger:hover {
-  background: rgba(201, 107, 90, 0.1);
+  background: rgba(201, 107, 90, 0.12);
+  border-color: var(--red-soft);
+  color: var(--red-deep);
 }
+
+/* Solid danger — used inside the ConfirmDialog for the affirmative button
+   of a destructive action. Carries the visual weight of "you're about to
+   commit". */
+.settings-btn.danger-solid {
+  background: var(--red-soft);
+  border-color: var(--red-soft);
+  color: var(--cream);
+}
+.settings-btn.danger-solid:hover {
+  background: var(--red-deep);
+  border-color: var(--red-deep);
+  box-shadow: 0 4px 14px rgba(201, 107, 90, 0.28);
+}
+.settings-btn.danger-solid:active {
+  box-shadow: 0 2px 6px rgba(201, 107, 90, 0.18);
+}
+
+/* Solid amber — affirmative non-destructive primary, for non-confirm
+   dialogs. */
+.settings-btn.primary {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: var(--cream);
+}
+.settings-btn.primary:hover {
+  background: var(--amber-2);
+  border-color: var(--amber-2);
+  box-shadow: 0 4px 14px rgba(184, 146, 74, 0.28);
+}
+
 .settings-actions {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-/* ── ONBOARDING ── */
+/* ── ONBOARDING ────────────────────────────────────────── */
 .onboarding-overlay {
   position: fixed;
   inset: 0;
@@ -467,7 +1009,7 @@ body::before {
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: opacity 0.5s ease;
+  transition: opacity 0.45s var(--ease-snap);
   pointer-events: none;
 }
 .onboarding-overlay.open {
@@ -485,7 +1027,9 @@ body::before {
   text-align: center;
   transform: translateY(20px);
   opacity: 0;
-  transition: transform 0.7s var(--ease-out), opacity 0.7s var(--ease-out);
+  transition:
+    transform 0.6s var(--ease-decel),
+    opacity 0.6s var(--ease-decel);
 }
 .onboarding-overlay.open .onboarding-content {
   transform: translateY(0);
@@ -511,7 +1055,9 @@ body::before {
   border: 2px solid var(--cream-3);
   border-radius: 16px;
   padding: 0.5rem;
-  transition: border-color 0.3s, box-shadow 0.3s;
+  transition:
+    border-color 0.3s var(--ease-snap),
+    box-shadow 0.3s var(--ease-snap);
 }
 .onboarding-input-wrap:focus-within {
   border-color: var(--amber);
@@ -542,7 +1088,10 @@ body::before {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.2s, transform 0.2s var(--ease), opacity 0.2s;
+  transition:
+    background 0.22s var(--ease-snap),
+    transform 0.24s var(--ease-spring),
+    opacity 0.22s var(--ease-snap);
 }
 .onboarding-btn:hover:not(:disabled) {
   background: var(--amber-2);
@@ -555,4 +1104,12 @@ body::before {
   background: var(--cream-3);
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* ── REDUCED MOTION ────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -225,22 +225,26 @@ body::before {
   background: var(--amber);
 }
 
-/* Bottom scroll-shadow — a faint gradient that pins to the bottom edge of
-   the scrolling viewport (position: sticky) and fades in whenever there's
-   more content below. Driven by ReminderList.tsx via the `.show-scroll-shadow`
-   class. Hidden cleanly when at the bottom or there's no overflow. */
+/* Bottom scroll-shadow — a small, concentrated gradient that pins to the
+   bottom edge of the scrolling viewport (position: sticky) and fades in
+   whenever there's more content below. Reduced from the previous 28px /
+   45% midpoint because the wider gradient smeared into the last visible
+   card AND blended seamlessly into the cream input bar below — no visual
+   separator. Now: 18px tall, cream concentrated in the bottom 35%, sharp
+   fade above. Combined with the .add-bar's defined shelf surface (solid
+   cream + soft upward shadow), the boundary between scrollable list and
+   fixed input is clean rather than muddy. */
 .list-wrap::after {
   content: '';
   position: sticky;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 28px;
-  margin-top: -28px;
+  height: 18px;
+  margin-top: -18px;
   background: linear-gradient(
     to top,
-    var(--cream) 0%,
-    rgba(245, 239, 224, 0.65) 45%,
+    var(--cream) 35%,
     transparent 100%
   );
   pointer-events: none;
@@ -294,49 +298,79 @@ body::before {
 .reminder-card.snooze-open { z-index: 10; }
 
 /* ── COMPLETION SEQUENCE ───────────────────────────────── */
-/* Multi-stage: check draws → color washes to success → hold → fade +
-   collapse. The card's natural height is pinned to --natural-height by
-   ReminderCard.tsx so the collapse animates precisely from "actual height"
-   to 0, regardless of how tall the title is.
+/* Split into two back-to-back animations so the visual ceremony (check
+   draw → colour wash → hold → opacity fade) completes IN FULL before any
+   layout collapse begins. Otherwise siblings reflow during the fade and
+   the eye sees movement happening simultaneously with the wash — looks
+   like everything reacts at once instead of one card finishing its turn.
 
-   Phases (relative to 1250ms total):
-     0-40%   : check draws (separate animation), card holds in cream
-     40-62%  : color washes to muted green; box-shadow blooms warmly
-     62-100% : fade + collapse to height 0, siblings slide up into the gap
+   Timeline (1500ms total):
+     0          ──────────────  card-fade starts (1250ms)
+     50–550ms   ▓░░░░░░░░░░░░  draw-check strokes in
+     0–550ms    ▓░░░░░░░░░░░░  check-bloom (circle overshoots)
+     437–750ms  ░▓▓▓░░░░░░░░░  cream → muted-green wash
+     750–1050ms ░░░▓▓▓░░░░░░░  hold the green so the eye registers it
+     1050–1250ms░░░░░░░▓▓░░░░  opacity 1 → 0 (still at full height)
+     1250       ──────────────  card-fade ends, card-collapse starts (250ms)
+     1250–1500ms░░░░░░░░░▓▓▓  max-height + padding + margin + border → 0
+                                siblings slide up smoothly during this 250ms
+
+   The card-collapse animation only touches layout properties; it never
+   sets background/opacity/etc, so the final-state of card-fade
+   (transparent green, opacity 0) carries through into the collapse.
 
    Hover-state rules are explicitly suppressed via `pointer-events: none` so
    accidental cursor movement during the animation doesn't fight the wash. */
 .reminder-card.completing {
   pointer-events: none;
   overflow: hidden;
-  animation: card-complete 1250ms var(--ease-snap) forwards;
+  animation:
+    card-fade 1250ms var(--ease-snap) forwards,
+    card-collapse 250ms var(--ease-snap) 1250ms forwards;
 }
-@keyframes card-complete {
+@keyframes card-fade {
   0% {
     background: rgba(255,252,245,0.85);
     border-color: var(--cream-3);
     box-shadow: 0 0 0 transparent;
-    max-height: var(--natural-height, 6rem);
     opacity: 1;
   }
   35% {
     background: rgba(255,252,245,0.85);
     border-color: var(--cream-3);
     box-shadow: 0 0 0 transparent;
+    opacity: 1;
   }
-  62% {
+  60% {
     background: rgba(110,155,122,0.16);
     border-color: rgba(110,155,122,0.5);
     box-shadow: 0 4px 20px rgba(110,155,122,0.18);
-    max-height: var(--natural-height, 6rem);
+    opacity: 1;
+  }
+  84% {
+    background: rgba(110,155,122,0.16);
+    border-color: rgba(110,155,122,0.5);
+    box-shadow: 0 4px 20px rgba(110,155,122,0.18);
     opacity: 1;
   }
   100% {
-    background: rgba(110,155,122,0);
+    background: rgba(110,155,122,0.05);
     border-color: transparent;
     box-shadow: 0 0 0 transparent;
-    max-height: 0;
     opacity: 0;
+  }
+}
+@keyframes card-collapse {
+  from {
+    max-height: var(--natural-height, 6rem);
+    padding-top: 0.9rem;
+    padding-bottom: 0.9rem;
+    margin-bottom: 0.55rem;
+    border-top-width: 1.5px;
+    border-bottom-width: 1.5px;
+  }
+  to {
+    max-height: 0;
     padding-top: 0;
     padding-bottom: 0;
     margin-bottom: 0;
@@ -377,12 +411,14 @@ body::before {
 
 /* During the completion animation, the check circle blooms (a small
    over-shoot scale) and the polyline strokes in via stroke-dashoffset —
-   "like ink being drawn with a fine pen". Both timed to land in phase 1
-   of the parent card-complete sequence. */
+   "like ink being drawn with a fine pen". The polyline points have been
+   reversed in icons.tsx so the ink begins at the left tip, sweeps DOWN
+   through the apex, then UP to the right tail — reads as a natural pen
+   stroke rather than starting from the wrong end. */
 .reminder-card.completing .check-wrap {
   background: var(--amber);
   border-color: var(--amber);
-  animation: check-bloom 600ms var(--ease-spring) forwards;
+  animation: check-bloom 550ms var(--ease-spring) forwards;
 }
 @keyframes check-bloom {
   0%   { transform: scale(1); }
@@ -393,7 +429,7 @@ body::before {
   opacity: 1;
   stroke-dasharray: 25;
   stroke-dashoffset: 25;
-  animation: draw-check 480ms var(--ease-decel) 80ms forwards;
+  animation: draw-check 500ms var(--ease-decel) 50ms forwards;
 }
 @keyframes draw-check {
   to { stroke-dashoffset: 0; }
@@ -448,11 +484,16 @@ body::before {
 .completed-time { font-style: italic; color: var(--text-soft); }
 
 /* ── EMPTY STATE ───────────────────────────────────────── */
+/* No delay on the rise animation. When the last card unmounts after its
+   completion sequence (at t=1500ms), the empty state mounts and begins
+   fading in IMMEDIATELY — no jarring 300ms hold. The card is already at
+   opacity 0 + max-height 0 when it unmounts, so there's no visible gap
+   between "card disappears" and "empty state begins fading in". */
 .empty-state {
   display: flex; flex-direction: column; align-items: center;
   padding: 3rem 0; gap: 0.75rem;
   opacity: 0;
-  animation: rise 0.6s 0.3s var(--ease-decel) forwards;
+  animation: rise 0.6s var(--ease-decel) forwards;
 }
 .empty-icon {
   width: 52px; height: 52px;
@@ -476,8 +517,20 @@ body::before {
 }
 
 /* ── BOTTOM ADD BAR ────────────────────────────────────── */
+/* The input bar is a defined surface — solid cream background, raised
+   stacking context (z-index: 10), and a soft upward shelf-shadow so the
+   list visually "lifts off" of it. Without this, the cream scroll-shadow
+   gradient at the bottom of the list smeared seamlessly into the cream
+   page background underneath the input area, with no visible separator —
+   the eye couldn't tell where the scrollable region ended and where the
+   anchored input began. Now the shadow + solid background creates a
+   clean shelf edge. */
 .add-bar {
   padding: 0.85rem 0 2rem;
+  background: var(--cream);
+  position: relative;
+  z-index: 10;
+  box-shadow: 0 -8px 16px -8px rgba(92, 64, 34, 0.07);
   animation: rise 0.6s 0.3s var(--ease-decel) both;
 }
 .add-input-wrap {

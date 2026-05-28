@@ -27,10 +27,23 @@ export function SmileIcon() {
   );
 }
 
+/**
+ * Checkmark, drawn left-to-right.
+ *
+ * The polyline points are ordered intentionally: (4,12) is the left tip,
+ * (9,17) is the apex (bottom of the V), (20,6) is the upper-right tail.
+ * SVG draws the path in declared order, so when we animate
+ * stroke-dashoffset on `.reminder-card.completing .check-wrap svg`, the
+ * stroke starts at the left tip, sweeps DOWN through the apex, then UP to
+ * the right tail — the natural sweep of a pen drawing a ✓.
+ *
+ * Reversing this back to "20 6 9 17 4 12" would draw from the right tail
+ * inward, which reads as mechanical / backwards.
+ */
 export function CheckIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <polyline points="20 6 9 17 4 12" />
+      <polyline points="4 12 9 17 20 6" />
     </svg>
   );
 }

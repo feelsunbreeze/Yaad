@@ -16,27 +16,43 @@ const SNOOZE_OPTIONS: { id: SnoozePreset; label: string }[] = [
   { id: "next_week", label: "next week"  },
 ];
 
-/** Total length (in CSS animation duration ms) of the completion sequence:
- *  check-draw → color wash → hold → fade + collapse. Keep in lockstep
- *  with the `.reminder-card.completing` animation duration in App.css. */
-const COMPLETION_DURATION_MS = 1250;
+/**
+ * Total length (ms) of the completion sequence, including the isolated
+ * layout-collapse tail. Must stay in lockstep with the two
+ * `.reminder-card.completing` animations in App.css:
+ *
+ *   card-fade     (1250ms) — visual ceremony, NO height change
+ *   card-collapse ( 250ms)  — layout collapse, siblings slide up
+ *
+ *   Total: 1500ms
+ *
+ * `props.onToggle()` is called at the end of this window so the card stays
+ * mounted for the full ceremony before the hook's optimistic flip removes
+ * it from the visible list.
+ */
+const COMPLETION_DURATION_MS = 1500;
 
 /**
  * A single reminder row. The visual is unchanged from the prototype —
- * check circle, body, snooze affordance — but the toggle interaction is
- * now a small ceremony:
+ * check circle, body, snooze affordance — but the toggle interaction is a
+ * sequenced ceremony rather than a snap:
  *
- *   1. Check strokes in (SVG dash-offset) — feels like ink with a fine pen
- *   2. Card colour washes to a success tone (cream → muted green)
- *   3. A brief hold, so the user reads the completion
- *   4. Card fades and collapses to zero height, siblings slide up
+ *   1. Check strokes in from the left tip, sweeps through the apex,
+ *      arrives at the right tail (~500ms). The check circle blooms in an
+ *      over-shoot scale, like ink setting.
+ *   2. Card background washes from cream to a muted-green success tone,
+ *      border + soft green glow growing in. (~300ms)
+ *   3. A brief hold while the eye registers the completion. (~300ms)
+ *   4. Card opacity fades to 0, still at full height. (~200ms)
+ *   5. CSS `card-collapse` animation kicks in: max-height + padding +
+ *      margin + border-width all → 0 over 250ms. Siblings slide up smoothly
+ *      to fill the gap. THIS is the only stage where neighbours move.
  *
- * The whole sequence is ~1.25s. The actual data write (the call to
- * `props.onToggle`, which fires the `complete` IPC) is delayed to the end
- * so the card stays mounted for the animation. Once we call onToggle the
- * hook's optimistic flip moves the reminder to the `done` bucket and the
- * `<For>` in ReminderList unmounts the card — by which point the card is
- * already at opacity 0 / max-height 0, so the unmount is invisible.
+ * Splitting the visual fade (steps 1-4) from the layout collapse (step 5)
+ * is what makes the multi-task case feel deliberate — other cards no
+ * longer flicker or shift while the ceremony is in flight. They wait
+ * their turn, then slide up as a clean follow-through after the
+ * completing card is fully invisible.
  */
 export function ReminderCard(props: ReminderCardProps) {
   const [snoozeOpen, setSnoozeOpen] = createSignal(false);
@@ -58,11 +74,6 @@ export function ReminderCard(props: ReminderCardProps) {
   const cardClass = () => {
     const classes = ["reminder-card"];
     if (props.reminder.done) classes.push("done");
-    // urgent treatment is suppressed once the reminder is done (or about
-    // to be done) so the red spine doesn't fight the success wash.
-    if (props.reminder.urgent && !props.reminder.done && !isCompleting()) {
-      classes.push("urgent");
-    }
     if (snoozeOpen()) classes.push("snooze-open");
     if (isCompleting()) classes.push("completing");
     return classes.join(" ");
@@ -176,10 +187,6 @@ export function ReminderCard(props: ReminderCardProps) {
       </div>
 
       <div class="reminder-right">
-        <Show when={props.reminder.urgent && !props.reminder.done && !isCompleting()}>
-          <span class="dot dot-red" />
-        </Show>
-
         <Show when={showSnooze()}>
           <div class="snooze-wrap" onClick={e => e.stopPropagation()}>
             <button

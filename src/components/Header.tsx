@@ -5,7 +5,9 @@ export interface HeaderProps {
   greeting: { lead: string; tail: string };
   /** Output of `formatDatePill(date)` — e.g. "thursday, 29 may". */
   date: string;
-  /** Optional click handler for the gear icon. */
+  /** Optional click handler for the gear icon. App wires this to the
+   *  `test_notification` IPC command so the user can verify OS toasts
+   *  without opening a settings page. */
   onSettings?: () => void;
 }
 
@@ -13,9 +15,9 @@ export interface HeaderProps {
  * Renders the top row of the app shell: italicised greeting on the left,
  * date pill underneath, settings icon on the right.
  *
- * Lives inside the parent `<header class="header">` element (which is owned
- * by App.tsx so the entrance animation on `.header` runs once for the whole
- * top block, not per-subcomponent).
+ * Lives inside the parent `<header class="header">` element (owned by
+ * App.tsx so the rise animation on `.header` runs once for the whole top
+ * block, not per-subcomponent).
  */
 export function Header(props: HeaderProps) {
   return (
@@ -30,7 +32,8 @@ export function Header(props: HeaderProps) {
       </div>
       <button
         class="icon-btn"
-        aria-label="Settings"
+        aria-label="Test notification"
+        title="Send a test notification"
         type="button"
         onClick={props.onSettings}
       >

@@ -14,19 +14,39 @@ pub fn parse(raw: &str) -> ParsedReminder {
     let lower = input.to_lowercase();
     let now = Local::now();
 
-    if let Some(r) = try_in_duration(&lower, &now, input) { return r; }
-    if let Some(r) = try_today_at(&lower, &now, input)    { return r; }
-    if let Some(r) = try_tomorrow_at(&lower, &now, input) { return r; }
-    if let Some(r) = try_weekday(&lower, &now, input)     { return r; }
-    if let Some(r) = try_bare_time(&lower, &now, input)   { return r; }
+    let parsed = try_in_duration(&lower, &now, input)
+        .or_else(|| try_today_at(&lower, &now, input))
+        .or_else(|| try_tomorrow_at(&lower, &now, input))
+        .or_else(|| try_weekday(&lower, &now, input))
+        .or_else(|| try_bare_time(&lower, &now, input));
 
-    // Fallback: 1 hour from now
-    let fire_at = now + Duration::hours(1);
-    ParsedReminder {
-        title: strip_lead(input).to_string(),
-        fire_at_ms: fire_at.timestamp_millis(),
-        confidence: 0.3,
-        human_time: "in 1 hour (guessed — add a time)".to_string(),
+    match parsed {
+        Some(mut r) => {
+            r.title = sanitize_title(r.title);
+            r
+        }
+        None => {
+            // Fallback: 1 hour from now
+            let fire_at = now + Duration::hours(1);
+            ParsedReminder {
+                title: sanitize_title(strip_lead(input).to_string()),
+                fire_at_ms: fire_at.timestamp_millis(),
+                confidence: 0.3,
+                human_time: "in 1 hour (guessed — add a time)".to_string(),
+            }
+        }
+    }
+}
+
+/// Empty or whitespace-only titles confuse the UI (the prototype card has
+/// no graceful "untitled" state). Provide a fixed placeholder so the
+/// reminder still surfaces and the user can rename via a future edit flow.
+fn sanitize_title(title: String) -> String {
+    let t = title.trim();
+    if t.is_empty() {
+        "untitled".to_string()
+    } else {
+        t.to_string()
     }
 }
 
@@ -34,8 +54,7 @@ pub fn parse(raw: &str) -> ParsedReminder {
 
 /// "in 10 min", "in 2 hours", "in 1 h", "in 3 days", "1m", "2h", "3d", "5 mins"
 fn try_in_duration(lower: &str, now: &DateTime<Local>, raw: &str) -> Option<ParsedReminder> {
-    // Matches "in 10 min", "in 1m", "2h", "3d", etc. Optional "in" prefix, support m/h/d shorthand.
-    let re = Regex::new(r"\b(?:in\s+)?(\d+)\s*(m|mins?|minutes?|h|hrs?|hours?|d|days?)\b").unwrap();
+    let re = Regex::new(r"\b(?:in\s+)?(\d+)\s*(m|mins?|minutes?|h|hrs?|hours?|d|days?)\b").ok()?;
     let cap = re.captures(lower)?;
     let n: i64 = cap[1].parse().ok()?;
     let unit = cap[2].to_lowercase();
@@ -58,7 +77,6 @@ fn try_in_duration(lower: &str, now: &DateTime<Local>, raw: &str) -> Option<Pars
         human_time: label,
     })
 }
-
 
 /// "today at 3pm", "at 3:30 today"
 fn try_today_at(lower: &str, now: &DateTime<Local>, raw: &str) -> Option<ParsedReminder> {
@@ -150,8 +168,8 @@ fn extract_time(lower: &str) -> Option<NaiveTime> {
     if lower.contains("evening")  { return NaiveTime::from_hms_opt(18,  0, 0); }
     if lower.contains("night")    { return NaiveTime::from_hms_opt(21,  0, 0); }
 
-    let re_full  = Regex::new(r"(\d{1,2}):(\d{2})\s*(am|pm)?").unwrap();
-    let re_short = Regex::new(r"(\d{1,2})\s*(am|pm)").unwrap();
+    let re_full  = Regex::new(r"(\d{1,2}):(\d{2})\s*(am|pm)?").ok()?;
+    let re_short = Regex::new(r"(\d{1,2})\s*(am|pm)").ok()?;
 
     if let Some(cap) = re_full.captures(lower) {
         let mut h: u32 = cap[1].parse().ok()?;
@@ -190,17 +208,14 @@ fn fmt_time(t: &NaiveTime) -> String {
 
 /// Remove the time phrase at [start, end) from raw, clean up, strip lead verbs.
 fn excise(raw: &str, start: usize, end: usize) -> String {
-    let lower = raw.to_lowercase();
-    // Find byte offsets in raw corresponding to lower's char-aligned positions
     let before = raw[..start].trim_end_matches([' ', ',']);
     let after  = raw[end..].trim_start_matches([' ', ',']);
     let combined = match (before.is_empty(), after.is_empty()) {
-        (true,  true)  => raw.to_string(),
+        (true,  true)  => String::new(),
         (true,  false) => after.to_string(),
         (false, true)  => before.to_string(),
         (false, false) => format!("{before} {after}"),
     };
-    let _ = lower; // suppress warning
     strip_lead(combined.trim()).to_string()
 }
 
@@ -218,25 +233,40 @@ fn strip_lead(s: &str) -> &str {
     s
 }
 
+/// Strip every time-phrase substring from `raw` while preserving the
+/// original character casing. Earlier versions ran the regex on the
+/// lowercase copy and tried to "find" the result back in raw — which fell
+/// through to the lowercase output on any miss, lower-casing the user's
+/// titles silently.
+///
+/// New approach: find time-phrase matches against the lowercase, then
+/// splice raw at the SAME byte offsets. Safe when `to_lowercase()`
+/// preserves byte length (true for ASCII; English reminders are the
+/// overwhelming case). For length-changing lowercase (e.g. ß → ss in
+/// non-English titles) we fall back to the lowercase output rather than
+/// risk a panicking slice.
 fn strip_time_phrase(raw: &str) -> String {
-    // Matches "in N min/h/day", "tomorrow", "today", "next <day>", "at Hpm",
-    // "noon/midnight/morning/evening/night", day names
     let re = Regex::new(
         r"(?i)\b(?:remind me to|remind me|remember to|remember|i need to|don'?t forget to|make sure to|make sure)?\s*(?:in\s+\d+\s*(?:mins?|minutes?|hrs?|hours?|days?)|tomorrow|today|next\s+\w+|on\s+\w+day|at\s+\d+(?::\d+)?\s*(?:am|pm)?|\d{1,2}(?::\d{2})?\s*(?:am|pm)|noon|midnight|morning|evening|night|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"
-    ).unwrap();
-    let lower_owned = raw.to_lowercase();
-    let result = re.replace_all(&lower_owned, "");
-    let result = result.trim().trim_matches(',').trim().to_string();
-    if result.is_empty() {
-        strip_lead(raw.trim()).to_string()
-    } else {
-        // Restore original casing from raw by finding first non-stripped portion
-        let lower = raw.to_lowercase();
-        if let Some(pos) = lower.find(result.as_str()) {
-            strip_lead(&raw[pos..raw.len().min(pos + result.len())]).to_string()
-        } else {
-            strip_lead(result.trim()).to_string()
+    ).expect("strip_time_phrase regex is valid");
+
+    let lower = raw.to_lowercase();
+
+    if lower.len() == raw.len() {
+        // ASCII-aligned: splice raw at lowercase match positions, preserving case.
+        let mut kept = String::new();
+        let mut last_end = 0;
+        for m in re.find_iter(&lower) {
+            kept.push_str(&raw[last_end..m.start()]);
+            last_end = m.end();
         }
+        kept.push_str(&raw[last_end..]);
+        strip_lead(kept.trim().trim_matches(',').trim()).to_string()
+    } else {
+        // Non-ASCII lowercase changed length — splicing raw at lower's
+        // offsets would mis-slice. Lose case fidelity to stay correct.
+        let stripped = re.replace_all(&lower, "");
+        strip_lead(stripped.trim().trim_matches(',').trim()).to_string()
     }
 }
 
@@ -246,37 +276,49 @@ mod tests {
 
     #[test]
     fn test_parse_in_duration() {
-        // "in 1 min"
         let p = parse("test project in 1 min");
         assert_eq!(p.title, "test project");
         assert_eq!(p.human_time, "in 1 minute");
         assert!(p.confidence > 0.9);
 
-        // "in 1m"
         let p = parse("test project in 1m");
         assert_eq!(p.title, "test project");
         assert_eq!(p.human_time, "in 1 minute");
 
-        // "1m"
         let p = parse("test project 1m");
         assert_eq!(p.title, "test project");
         assert_eq!(p.human_time, "in 1 minute");
 
-        // "1 min" (no prefix)
         let p = parse("test project 1 min");
         assert_eq!(p.title, "test project");
         assert_eq!(p.human_time, "in 1 minute");
 
-        // "in 2 hours"
         let p = parse("meeting in 2 hours");
         assert_eq!(p.title, "meeting");
         assert_eq!(p.human_time, "in 2 hours");
 
-        // "3d"
         let p = parse("vacation 3d");
         assert_eq!(p.title, "vacation");
         assert_eq!(p.human_time, "in 3 days");
     }
+
+    #[test]
+    fn test_title_case_preserved() {
+        // Capital letters in the title must round-trip through strip_time_phrase
+        // — the previous implementation lowered "Call Mom" to "call mom".
+        let p = parse("Call Mom tomorrow at 5pm");
+        assert_eq!(p.title, "Call Mom");
+
+        let p = parse("Submit Q3 Report next Monday");
+        assert_eq!(p.title, "Submit Q3 Report");
+    }
+
+    #[test]
+    fn test_empty_input_safe() {
+        let p = parse("");
+        assert_eq!(p.title, "untitled");
+
+        let p = parse("   ");
+        assert_eq!(p.title, "untitled");
+    }
 }
-
-

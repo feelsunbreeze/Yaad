@@ -2,9 +2,9 @@
  * UI-side types for the Yaad reminder app.
  *
  * The shape here is intentionally separate from whatever the Rust backend
- * returns (see `src-tauri/src/commands.rs::ReminderView`). When you wire up
- * `invoke("list_reminders")`, map the backend payload into `Reminder` inside
- * the hook — that way the components stay decoupled from the wire format.
+ * returns (see `src-tauri/src/commands.rs::ReminderView`). The hook
+ * (`useReminders`) owns the `BackendReminder` ↔ `Reminder` mapping so the
+ * components stay decoupled from the wire format.
  */
 
 /** Which list is currently visible in the tab strip. */
@@ -12,6 +12,9 @@ export type Tab = "today" | "upcoming" | "done";
 
 /** Tone of the small pill rendered next to a reminder's time. */
 export type TagTone = "warm" | "green" | "red" | "muted";
+
+/** Snooze presets understood by the Rust `snooze` IPC command. */
+export type SnoozePreset = "1h" | "tonight" | "tomorrow" | "next_week";
 
 export interface ReminderTag {
   /** lowercase display text, e.g. "important" */
@@ -31,6 +34,8 @@ export interface Reminder {
   /** ms-since-epoch the reminder is meant to fire. Reserved for sorting; the
    *  card itself only displays `timeLabel`. */
   fireAt: number | null;
+  /** ms-since-epoch when the reminder was completed (only set for done items). */
+  completedAt: number | null;
   /** Whether the user has checked this off. Drives the strike-through state. */
   done: boolean;
   /** Marks the card with the red left spine + red dot on the right. */
@@ -47,11 +52,11 @@ export interface QuickTag {
   /** Visible text, may include emoji, e.g. "🌅 morning". */
   label: string;
   /**
-   * Optional tone hint — used to colour the resulting reminder's tag pill.
-   * If null, selecting this quick tag only flags the next reminder but
-   * doesn't attach a coloured tag pill.
+   * Text prepended to the raw input when this tag is selected at submit time.
+   * The Rust parser at `src-tauri/src/parser.rs` reads phrases like "tomorrow
+   * morning" / "in 30 minutes" and sets `fire_at` accordingly, so we bake the
+   * time cue into the text instead of inventing a new tag schema in the DB.
+   * Null = no-op selector.
    */
-  tone: TagTone | null;
-  /** If true, selecting this quick tag flags the next reminder as urgent. */
-  marksUrgent?: boolean;
+  injectPrefix: string | null;
 }

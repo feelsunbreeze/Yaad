@@ -1,105 +1,109 @@
-import { createSignal, createMemo } from "solid-js";
+import { createSignal, createMemo, onMount, onCleanup } from "solid-js";
 import { createStore } from "solid-js/store";
-import type { Reminder, Tab, QuickTag } from "@/lib/types";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { Reminder, Tab, QuickTag, SnoozePreset } from "@/lib/types";
 
 /**
- * Seed data so the prototype renders something on first run.
- *
- * Replace with `await invoke("list_reminders")` inside `loadReminders()`
- * — the call sites for every backend command (capture_submit, list_reminders,
- * complete, list_completed, snooze) are flagged with `TODO: invoke(...)`
- * below so wiring them up is a search-and-replace exercise.
+ * Wire shape returned by `list_reminders` / `list_completed`. Matches the
+ * `ReminderView` struct in `src-tauri/src/commands.rs` exactly — if you
+ * change that struct, mirror it here. Field names use snake_case because
+ * Serde serialises Rust struct fields verbatim.
  */
-const SEED: Reminder[] = [
-  {
-    id: "r1",
-    title: "reply to email",
-    timeLabel: "10:30 am",
-    fireAt: null,
-    done: false,
-    urgent: true,
-    tag: { label: "important", tone: "warm" },
-    bucket: "today",
-  },
-  {
-    id: "r2",
-    title: "call dad",
-    timeLabel: "2:00 pm",
-    fireAt: null,
-    done: false,
-    urgent: false,
-    tag: { label: "family", tone: "green" },
-    bucket: "today",
-  },
-  {
-    id: "r3",
-    title: "buy oat milk",
-    timeLabel: null,
-    fireAt: null,
-    done: false,
-    urgent: false,
-    tag: null,
-    bucket: "today",
-  },
-  {
-    id: "r4",
-    title: "renew library card",
-    timeLabel: "next monday",
-    fireAt: null,
-    done: false,
-    urgent: false,
-    tag: { label: "errand", tone: "muted" },
-    bucket: "upcoming",
-  },
-  {
-    id: "r5",
-    title: "submit timesheet",
-    timeLabel: "9:00 am",
-    fireAt: null,
-    done: true,
-    urgent: false,
-    tag: null,
-    bucket: "today",
-  },
-];
+interface BackendReminder {
+  id: string;
+  title: string;
+  status: string;
+  priority: number;
+  created_at: number;
+  fire_at: number | null;
+  human_time: string | null;
+  completed_at: number | null;
+}
+
+/** Three-hour urgency window, milliseconds. Same threshold the prior UI
+ *  used for the "Right now" partition, so the red treatment surfaces at
+ *  the time bound the user already calibrated against. */
+const URGENT_WINDOW_MS = 3 * 60 * 60 * 1000;
+
+/** Reload cadence while the window is visible. Pauses when document.hidden
+ *  flips true so the OS isn't woken on a hidden window. */
+const LIVE_TICK_MS = 60_000;
+
+/** End-of-today epoch ms — anything firing before this is in the "today"
+ *  bucket; anything after is "upcoming". */
+function endOfTodayMs(now: number): number {
+  const d = new Date(now);
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
 
 /**
- * Quick-tag chips rendered under the bottom input. Selecting one before
- * submitting tags the resulting reminder. `marksUrgent: true` flips the
- * `urgent` flag (red left spine + red dot on the right of the card).
+ * Map a Rust `ReminderView` into the UI `Reminder` shape.
+ *
+ * Derived fields:
+ *   - `bucket`  : null / past / before-end-of-day → "today", else → "upcoming"
+ *   - `urgent`  : not done AND fires within 3h (or overdue)
+ *   - `tag`     : "important" warm pill when urgent — the backend doesn't
+ *                 carry tags yet, so we synthesise one to match the
+ *                 prototype's example card. To surface user-chosen tags,
+ *                 extend `ReminderView` and `capture_submit` and forward
+ *                 the value here.
+ */
+function mapBackend(b: BackendReminder, now: number): Reminder {
+  const done   = b.status === "completed";
+  const fireAt = b.fire_at;
+  const bucket: "today" | "upcoming" =
+    fireAt === null || fireAt <= endOfTodayMs(now) ? "today" : "upcoming";
+  const urgent = !done && fireAt !== null && fireAt <= now + URGENT_WINDOW_MS;
+
+  return {
+    id:          b.id,
+    title:       b.title,
+    timeLabel:   b.human_time,
+    fireAt,
+    completedAt: b.completed_at,
+    done,
+    urgent,
+    tag:         urgent ? { label: "important", tone: "warm" } : null,
+    bucket,
+  };
+}
+
+/**
+ * Quick-tag chips under the add-bar.
+ *
+ * `injectPrefix` is prepended to the raw input on submit. The Rust parser
+ * (`src-tauri/src/parser.rs`) extracts time phrases from the title and
+ * computes `fire_at`, so a chip like "⚡ urgent" effectively means "set
+ * fire_at = now + 30m" without needing a separate DB column for tags.
  */
 export const QUICK_TAGS: QuickTag[] = [
-  { id: "morning", label: "🌅 morning", tone: "warm", marksUrgent: false },
-  { id: "urgent",  label: "⚡ urgent",  tone: "red",  marksUrgent: true  },
+  { id: "morning", label: "🌅 morning", injectPrefix: "tomorrow morning" },
+  { id: "urgent",  label: "⚡ urgent",  injectPrefix: "in 30 minutes"   },
 ];
 
 /**
- * Central reminder state. Returns plain accessors + action callbacks so the
- * components stay dumb and the data plumbing lives in one file.
+ * Central reminder hook. Owns the entire data lifecycle:
  *
- * State shape:
- *   - `reminders`  : full Reminder[] store
- *   - `tab`        : currently-selected tab signal
+ *   - initial fetch
+ *   - listen("reminder:fired") + listen("reminder:snoozed_quiet") refresh
+ *   - 60s "tick" reload while the window is visible
+ *   - pauses on document.visibilitychange when hidden
+ *   - surfaces invoke errors via the `error` signal (App.tsx renders a banner)
  *
- * Derived:
- *   - `visible`    : Reminder[] filtered for the active tab
- *   - `total`      : total reminder count (drives progress bar denominator)
- *   - `done`       : completed reminder count
- *   - `percent`    : `done/total * 100`, rounded
- *
- * Actions:
- *   - `setTab(t)`              : switch tab
- *   - `toggleDone(id)`         : flip a reminder's done state
- *   - `addReminder(text, ids)` : push a new reminder, applying quick-tag effects
- *   - `loadReminders()`        : refresh from backend (stub — wire to invoke)
+ * Returns plain accessors + action callbacks so the components stay dumb.
  */
 export function useReminders() {
-  const [reminders, setReminders] = createStore<Reminder[]>(SEED);
+  const [reminders, setReminders] = createStore<Reminder[]>([]);
   const [tab, setTab] = createSignal<Tab>("today");
+  const [error, setError] = createSignal<string | null>(null);
+
+  // ── Derived ─────────────────────────────────────────────────────────────
 
   const visible = createMemo<Reminder[]>(() => {
     const t = tab();
-    if (t === "done") return reminders.filter(r => r.done);
+    if (t === "done")  return reminders.filter(r => r.done);
     if (t === "today") return reminders.filter(r => !r.done && r.bucket === "today");
     return reminders.filter(r => !r.done && r.bucket === "upcoming");
   });
@@ -110,64 +114,142 @@ export function useReminders() {
     total() === 0 ? 0 : Math.round((done() / total()) * 100)
   );
 
-  function toggleDone(id: string) {
-    setReminders(r => r.id === id, "done", d => !d);
-    // TODO: invoke("complete", { id })  — and refetch via loadReminders().
-    //   On uncomplete, you'll need a new Rust command (none exists yet) or
-    //   adjust the schema so the UI can re-open a completed reminder.
+  // ── Actions ─────────────────────────────────────────────────────────────
+
+  async function loadReminders(): Promise<void> {
+    try {
+      const [active, completed] = await Promise.all([
+        invoke<BackendReminder[]>("list_reminders"),
+        invoke<BackendReminder[]>("list_completed"),
+      ]);
+      const now = Date.now();
+      setReminders([...active, ...completed].map(b => mapBackend(b, now)));
+      setError(null);
+    } catch (e) {
+      console.error("loadReminders failed:", e);
+      setError(`couldn't load reminders: ${stringify(e)}`);
+    }
   }
 
-  function addReminder(rawTitle: string, selectedTagIds: string[]) {
+  async function toggleDone(id: string): Promise<void> {
+    const r = reminders.find(x => x.id === id);
+    if (!r) return;
+    // Backend `complete` is one-way — Yaad has no "reopen" command. Clicking
+    // a done card is a deliberate no-op until the Rust side grows one.
+    if (r.done) return;
+
+    // Optimistic flip — the check fills immediately, then reconcile with
+    // backend truth on refresh.
+    setReminders(x => x.id === id, "done", true);
+    try {
+      await invoke("complete", { id });
+      await loadReminders();
+    } catch (e) {
+      console.error("complete failed:", e);
+      setReminders(x => x.id === id, "done", false);
+      setError(`couldn't mark done: ${stringify(e)}`);
+    }
+  }
+
+  async function addReminder(rawTitle: string, selectedTagIds: string[]): Promise<void> {
     const title = rawTitle.trim();
     if (!title) return;
 
-    const matched   = QUICK_TAGS.filter(q => selectedTagIds.includes(q.id));
-    const urgent    = matched.some(q => q.marksUrgent);
-    const firstTone = matched.find(q => q.tone !== null) ?? null;
-    const tag = firstTone
-      ? {
-          // strip the leading emoji+space so the pill reads "morning" / "urgent"
-          // rather than "🌅 morning".
-          label: firstTone.label.replace(/^\S+\s+/, ""),
-          tone:  firstTone.tone!,
-        }
-      : null;
+    // Bake selected quick-tag prefixes into the raw string so the Rust parser
+    // picks the time cue up.
+    const prefixes = QUICK_TAGS
+      .filter(q => selectedTagIds.includes(q.id) && q.injectPrefix)
+      .map(q => q.injectPrefix as string);
+    const raw = [...prefixes, title].join(" ");
 
-    const next: Reminder = {
-      id: "r" + Date.now().toString(36),
-      title,
-      timeLabel: null,
-      fireAt: null,
-      done: false,
-      urgent,
-      tag,
-      bucket: "today",
-    };
-    setReminders(curr => [...curr, next]);
-    // TODO: invoke("capture_submit", { raw: title })
-    //   then `await loadReminders()` to pick up the parsed fireAt + human_time
-    //   from the Rust parser.
+    try {
+      await invoke("capture_submit", { raw });
+      await loadReminders();
+    } catch (e) {
+      console.error("capture_submit failed:", e);
+      setError(`couldn't add reminder: ${stringify(e)}`);
+    }
   }
 
-  async function loadReminders(): Promise<void> {
-    // TODO: replace the body with:
-    //   const data = await invoke<BackendReminder[]>("list_reminders");
-    //   const completed = await invoke<BackendReminder[]>("list_completed");
-    //   setReminders([...data, ...completed].map(mapBackend));
-    //
-    // Where `mapBackend` converts the Rust ReminderView into our UI Reminder:
-    //   - title         → title
-    //   - human_time    → timeLabel
-    //   - fire_at       → fireAt
-    //   - status === "completed" → done
-    //   - bucket can be derived from `fire_at` (today vs. upcoming)
+  async function snoozeReminder(id: string, preset: SnoozePreset): Promise<void> {
+    try {
+      await invoke("snooze", { id, preset });
+      await loadReminders();
+    } catch (e) {
+      console.error("snooze failed:", e);
+      setError(`couldn't snooze: ${stringify(e)}`);
+    }
   }
+
+  function dismissError() {
+    setError(null);
+  }
+
+  /** External (App / components) entry point to surface a one-shot error
+   *  through the same banner the hook uses for invoke failures. */
+  function raiseError(msg: string) {
+    setError(msg);
+  }
+
+  // ── Lifecycle ───────────────────────────────────────────────────────────
+  //
+  // Owns:
+  //   - first load
+  //   - reminder:fired / reminder:snoozed_quiet subscriptions
+  //   - visibility-aware 60s tick (pauses on document.hidden, resumes on
+  //     visibilitychange + fires an immediate reload so the list is fresh)
+
+  onMount(() => {
+    let unfire: UnlistenFn | undefined;
+    let unsnooze: UnlistenFn | undefined;
+    let tickId: number | undefined;
+
+    function startTick() {
+      stopTick();
+      tickId = window.setInterval(() => { void loadReminders(); }, LIVE_TICK_MS);
+    }
+    function stopTick() {
+      if (tickId !== undefined) {
+        window.clearInterval(tickId);
+        tickId = undefined;
+      }
+    }
+    function onVisibility() {
+      if (document.hidden) {
+        stopTick();
+      } else {
+        // Immediate refresh on resume — relative timestamps and any reminders
+        // fired while hidden are now up to date.
+        void loadReminders();
+        startTick();
+      }
+    }
+
+    void (async () => {
+      await loadReminders();
+      unfire   = await listen("reminder:fired",         () => { void loadReminders(); });
+      unsnooze = await listen("reminder:snoozed_quiet", () => { void loadReminders(); });
+    })();
+
+    document.addEventListener("visibilitychange", onVisibility);
+    if (!document.hidden) startTick();
+
+    onCleanup(() => {
+      unfire?.();
+      unsnooze?.();
+      stopTick();
+      document.removeEventListener("visibilitychange", onVisibility);
+    });
+  });
 
   return {
     // state
     reminders,
     tab,
     setTab,
+    error,
+    dismissError,
+    raiseError,
     // derived
     visible,
     total,
@@ -176,6 +258,19 @@ export function useReminders() {
     // actions
     toggleDone,
     addReminder,
+    snoozeReminder,
     loadReminders,
   };
+}
+
+/** Stringify an unknown error in a way that survives both `Error` and Tauri's
+ *  string error payloads. */
+function stringify(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
 }

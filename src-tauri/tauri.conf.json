@@ -13,16 +13,17 @@
     "windows": [
       {
         "title": "Yaad",
-        "width": 780,
-        "height": 620,
-        "minWidth": 560,
-        "minHeight": 480,
+        "width": 460,
+        "height": 720,
+        "minWidth": 400,
+        "minHeight": 540,
         "decorations": true,
-        "transparent": false
+        "transparent": false,
+        "resizable": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
     }
   },
   "bundle": {
@@ -34,6 +35,30 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "category": "Productivity",
+    "shortDescription": "ADHD-aware reminders that surface when you'll actually notice.",
+    "longDescription": "Yaad is a small, calm reminder app. Capture a thought with the inline bar, and a background worker fires native OS notifications with built-in jitter and pattern-interrupt framing so ADHD brains actually catch the alert.",
+    "linux": {
+      "deb": {
+        "depends": ["libnotify4 (>= 0.7.7)", "libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      },
+      "rpm": {
+        "depends": ["libnotify >= 0.7.7", "webkit2gtk4.1", "gtk3"]
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "category": "public.app-category.productivity",
+      "exceptionDomain": ""
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
+    }
   }
 }

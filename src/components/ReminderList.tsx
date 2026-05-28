@@ -1,5 +1,5 @@
 import { For, Show } from "solid-js";
-import type { Reminder, Tab } from "@/lib/types";
+import type { Reminder, Tab, SnoozePreset } from "@/lib/types";
 import { ReminderCard } from "./ReminderCard";
 import { SmileIcon } from "./icons";
 
@@ -22,6 +22,8 @@ export interface ReminderListProps {
   tab: Tab;
   /** Forwarded down to each card. */
   onToggle: (id: string) => void;
+  /** Forwarded to each card's snooze popover. */
+  onSnooze: (id: string, preset: SnoozePreset) => void;
 }
 
 /**
@@ -45,7 +47,13 @@ export function ReminderList(props: ReminderListProps) {
       >
         <p class="section-label">{SECTION_LABEL[props.tab]}</p>
         <For each={props.reminders}>
-          {r => <ReminderCard reminder={r} onToggle={props.onToggle} />}
+          {r => (
+            <ReminderCard
+              reminder={r}
+              onToggle={props.onToggle}
+              onSnooze={props.onSnooze}
+            />
+          )}
         </For>
       </Show>
     </main>

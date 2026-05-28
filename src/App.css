@@ -167,6 +167,7 @@ body::before {
 .reminder-card.done .reminder-title { text-decoration: line-through; color: var(--text-soft); }
 .reminder-card.urgent::before { opacity: 1; background: var(--red-soft); }
 .reminder-card.urgent { border-color: rgba(201,107,90,0.35); }
+.reminder-card.snooze-open { z-index: 10; }
 /* check circle */
 .check-wrap {
   flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
@@ -321,7 +322,7 @@ body::before {
 @keyframes check-bounce { 0% { transform: scale(1); } 40% { transform: scale(0.8); } 70% { transform: scale(1.18); } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
 
-/* -- ADDBAR PARSE PREVIEW -- */
+/* ── ADDBAR PARSE PREVIEW ── */
 .parse-preview {
   font-family: var(--font-body);
   font-size: 0.75rem;
@@ -329,18 +330,10 @@ body::before {
   margin-top: 0.5rem;
   margin-left: 0.5rem;
   font-style: italic;
-  display: flex;
-}
-.parse-preview-text {
-  display: inline-block;
-  animation: fade-in-up 0.3s var(--ease-out) both;
-}
-@keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  animation: rise 0.3s var(--ease-out) both;
 }
 
-/* -- MODALS & OVERLAYS -- */
+/* ── MODALS & OVERLAYS ── */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -354,23 +347,9 @@ body::before {
   padding: 1rem;
   animation: fade-in 0.3s var(--ease-out) both;
 }
-.modal-overlay.closing {
-  animation: fade-out 0.3s var(--ease-out) both;
-}
-.modal-overlay.closing .modal-content {
-  animation: fade-out-down 0.3s var(--ease-out) both;
-}
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
-}
-@keyframes fade-out {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-@keyframes fade-out-down {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(12px); }
 }
 
 .modal-content {
@@ -380,9 +359,9 @@ body::before {
   width: 100%;
   max-width: 400px;
   padding: 1.5rem;
-  box-shadow: 0 16px 40px rgba(92, 64, 34, 0.15);
+  box-shadow: 0 12px 40px rgba(92, 64, 34, 0.12);
+  animation: rise 0.4s var(--ease-out) both;
 }
-
 .modal-header {
   display: flex;
   align-items: center;
@@ -391,33 +370,39 @@ body::before {
 }
 .modal-header h2 {
   font-family: var(--font-display);
-  font-size: 1.25rem;
-  color: var(--brown-2);
+  font-size: 1.4rem;
   font-weight: 500;
+  color: var(--brown-2);
 }
 .modal-close {
-  background: none;
+  background: transparent;
   border: none;
   font-size: 1.5rem;
   color: var(--text-soft);
   cursor: pointer;
-  line-height: 1;
-  padding: 0 0.25rem;
   transition: color 0.2s;
 }
-.modal-close:hover { color: var(--text-main); }
+.modal-close:hover { color: var(--red-soft); }
 
+/* ── SETTINGS ── */
 .settings-section {
   margin-bottom: 1.5rem;
 }
-.settings-section:last-child { margin-bottom: 0; }
 .settings-section label {
   display: block;
-  font-size: 0.75rem;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-mute);
+  margin-bottom: 0.4rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+.settings-desc {
+  font-size: 0.75rem;
   color: var(--text-soft);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.6rem;
+  line-height: 1.3;
 }
 .settings-row {
   display: flex;
@@ -428,9 +413,9 @@ body::before {
   background: var(--cream);
   border: 1.5px solid var(--cream-3);
   border-radius: 10px;
-  padding: 0.5rem 0.75rem;
+  padding: 0.6rem;
   font-family: var(--font-body);
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   color: var(--text-main);
   outline: none;
   transition: border-color 0.2s;
@@ -445,20 +430,20 @@ body::before {
 .settings-btn {
   background: var(--cream-2);
   border: 1.5px solid var(--cream-3);
-  color: var(--text-main);
   border-radius: 10px;
-  padding: 0.5rem 1rem;
+  padding: 0.6rem 1rem;
   font-family: var(--font-body);
   font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-main);
   cursor: pointer;
-  transition: background 0.2s, transform 0.15s;
+  transition: background 0.2s, transform 0.2s var(--ease);
 }
 .settings-btn:hover {
   background: var(--cream-3);
+  transform: scale(1.02);
 }
-.settings-btn:active {
-  transform: scale(0.96);
-}
+.settings-btn:active { transform: scale(0.96); }
 .settings-btn.danger {
   color: var(--red-soft);
   border-color: rgba(201, 107, 90, 0.3);
@@ -466,9 +451,108 @@ body::before {
 .settings-btn.danger:hover {
   background: rgba(201, 107, 90, 0.1);
 }
-.settings-desc {
-  font-size: 0.8rem;
-  color: var(--text-soft);
-  margin-bottom: 0.5rem;
+.settings-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
+/* ── ONBOARDING ── */
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: var(--cream);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+}
+.onboarding-overlay.open {
+  opacity: 1;
+  pointer-events: all;
+}
+.onboarding-overlay.closing {
+  opacity: 0;
+  pointer-events: none;
+}
+.onboarding-content {
+  max-width: 400px;
+  width: 100%;
+  padding: 2rem;
+  text-align: center;
+  transform: translateY(20px);
+  opacity: 0;
+  transition: transform 0.7s var(--ease-out), opacity 0.7s var(--ease-out);
+}
+.onboarding-overlay.open .onboarding-content {
+  transform: translateY(0);
+  opacity: 1;
+}
+.onboarding-content h1 {
+  font-family: var(--font-display);
+  font-size: 2.5rem;
+  font-weight: 500;
+  color: var(--brown-2);
+  margin-bottom: 0.5rem;
+}
+.onboarding-content p {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  color: var(--text-mute);
+  margin-bottom: 2rem;
+}
+.onboarding-input-wrap {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 252, 245, 0.9);
+  border: 2px solid var(--cream-3);
+  border-radius: 16px;
+  padding: 0.5rem;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.onboarding-input-wrap:focus-within {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 4px rgba(184, 146, 74, 0.15);
+}
+.onboarding-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0.5rem 1rem;
+  font-family: var(--font-body);
+  font-size: 1.1rem;
+  color: var(--text-main);
+}
+.onboarding-input::placeholder {
+  color: var(--text-soft);
+  font-style: italic;
+}
+.onboarding-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--amber);
+  border: none;
+  color: var(--cream);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s var(--ease), opacity 0.2s;
+}
+.onboarding-btn:hover:not(:disabled) {
+  background: var(--amber-2);
+  transform: scale(1.05);
+}
+.onboarding-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+.onboarding-btn:disabled {
+  background: var(--cream-3);
+  opacity: 0.6;
+  cursor: not-allowed;
+}

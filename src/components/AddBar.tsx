@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onCleanup, Show } from "solid-js";
+import { createSignal, createEffect, onCleanup } from "solid-js";
 import { PlusIcon } from "./icons";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -40,13 +40,6 @@ export function AddBar(props: AddBarProps) {
     setParsedText("");
   }
 
-  const previewText = () => {
-    if (parsedText()) {
-      return `↳ will surface randomly before ${parsedText()}`;
-    }
-    return "↳ will surface in 1 hour by default";
-  };
-
   return (
     <footer class="add-bar">
       <div class="add-input-wrap">
@@ -75,11 +68,11 @@ export function AddBar(props: AddBarProps) {
         </button>
       </div>
       
-      <div class="parse-preview">
-        <Show when={previewText()} keyed>
-          {text => <span class="parse-preview-text">{text}</span>}
-        </Show>
-      </div>
+      {parsedText() && (
+        <div class="parse-preview">
+          ↳ will surface randomly before {parsedText()}
+        </div>
+      )}
     </footer>
   );
 }

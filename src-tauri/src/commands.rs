@@ -19,7 +19,7 @@ fn compute_run_at(now_s: i64, fire_at_s: i64) -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.subsec_nanos() as i64)
         .unwrap_or(42);
-    
+
     now_s + (nanos % (fire_at_s - now_s + 1))
 }
 
@@ -89,7 +89,8 @@ pub fn capture_submit(
 
     let q = state.honker_db.queue("due_reminders", QueueOpts::default());
 
-    // Enqueue the exact deadline job
+    // Enqueue the exact deadline job. `due: true` tells the worker (and via it
+    // the frontend) this is the real "due now" moment → play due_now.wav.
     let mut exact_opts = EnqueueOpts::default();
     exact_opts.run_at = Some(fire_at_s);
     q.enqueue_tx(&tx, &json!({
@@ -98,9 +99,11 @@ pub fn capture_submit(
         "title":         parsed.title,
         "human_time":    parsed.human_time,
         "attempt":       frequency,
+        "due":           true,
     }), exact_opts).map_err(|e| e.to_string())?;
 
-    // Enqueue random pre-deadline jobs
+    // Enqueue random pre-deadline nudges. `due: false` → frontend plays a
+    // random notify tone, not the due_now sound.
     for i in 1..frequency {
         let mut opts = EnqueueOpts::default();
         opts.run_at = Some(compute_run_at(now / 1000, fire_at_s));
@@ -110,6 +113,7 @@ pub fn capture_submit(
             "title":         parsed.title,
             "human_time":    parsed.human_time,
             "attempt":       i,
+            "due":           false,
         }), opts).map_err(|e| e.to_string())?;
     }
 
@@ -276,7 +280,7 @@ pub fn snooze(
 
     let q = state.honker_db.queue("due_reminders", QueueOpts::default());
 
-    // Enqueue exact deadline job
+    // Enqueue exact deadline job (due: true → due_now.wav on fire).
     let mut exact_opts = EnqueueOpts::default();
     exact_opts.run_at = Some(fire_at_s);
     q.enqueue_tx(&tx, &json!({
@@ -285,9 +289,10 @@ pub fn snooze(
         "title":         title,
         "human_time":    human,
         "attempt":       frequency,
+        "due":           true,
     }), exact_opts).map_err(|e| e.to_string())?;
 
-    // Enqueue random pre-deadline jobs
+    // Enqueue random pre-deadline nudges (due: false → random notify tone).
     for i in 1..frequency {
         let mut opts = EnqueueOpts::default();
         opts.run_at = Some(compute_run_at(db_now / 1000, fire_at_s));
@@ -297,6 +302,7 @@ pub fn snooze(
             "title":         title,
             "human_time":    human,
             "attempt":       i,
+            "due":           false,
         }), opts).map_err(|e| e.to_string())?;
     }
 
@@ -465,10 +471,10 @@ pub fn factory_reset(state: State<'_, AppState>) -> Result<(), String> {
          DELETE FROM reminders;
          DELETE FROM settings;"
     ).map_err(|e| e.to_string())?;
-    
+
     // Wipe honker queue (it has its own connection, but it's the same DB file and WAL allows it if we coordinate,
     // actually, just deleting from honker's internal tables using a fresh transaction is safer)
-    // Wait, let's just wipe the app tables. The jobs might still be in honker queue, 
+    // Wait, let's just wipe the app tables. The jobs might still be in honker queue,
     // but the occurrences are gone, so worker will skip them anyway!
     Ok(())
 }

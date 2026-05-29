@@ -6,30 +6,32 @@
 //!   Linux    → libnotify over DBus (requires notify-send / libnotify-bin)
 //!
 //! ADHD strategy:
-//!   1. Random jitter (30s – 7 min) at claim time — genuinely unpredictable.
+//!   1. Pre-deadline "nudge" notifications fire at random moments before the
+//!      deadline (scheduled up-front in commands.rs), plus one exact-deadline
+//!      "due" notification. Count is the user's notification_frequency setting.
 //!   2. Pattern-interrupt message framing — not "REMINDER:", feels human.
-//!   3. Re-fire after 6–12 min if the reminder wasn't completed.
-//!   4. Quiet between 00:00–07:00 local time (re-queued for 07:00, NOT dropped).
-//!   5. Never fires more than 3 times for the same occurrence.
+//!   3. Quiet hours (00:00–07:00 local) are OPT-IN via the
+//!      `quiet_hours_enabled` setting and OFF by default. When enabled, an
+//!      overnight notification is re-queued for 07:00 rather than dropped.
 //!
 //! Architecture:
 //!   - Main loop: claim job → spawn detached thread → continue claiming.
-//!     This keeps jitter sleeps off the worker thread so multiple due
-//!     reminders no longer serialise behind each other.
-//!   - Per-job thread: quiet-hours guard → jitter sleep → pre-fire DB check
-//!     (skip if the occurrence has been completed or snoozed since enqueue)
-//!     → OS notification → ack → re-enqueue retry if attempt < 2.
+//!     Keeps any per-job work off the worker thread so simultaneous reminders
+//!     don't serialise behind each other.
+//!   - Per-job thread: quiet-hours guard → pre-fire DB check (skip if the
+//!     occurrence was completed/snoozed since enqueue) → OS notification →
+//!     ack → emit `reminder:fired` so the UI plays its sound + in-app cue.
 
 use honker::{Database, QueueOpts, EnqueueOpts, Job};
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_notification::{NotificationExt, PermissionState};
 use std::time::Duration;
 use chrono::{Local, NaiveTime, TimeZone, Timelike};
 use serde_json::{json, Value};
 
 use crate::db::AppState;
 
-/// Message framings — cycle so no two consecutive re-fires sound identical.
+/// Message framings — cycle so no two consecutive notifications sound identical.
 const FRAMINGS: &[&str] = &[
     "hey —",
     "while you're there —",
@@ -40,11 +42,9 @@ const FRAMINGS: &[&str] = &[
     "", // bare title, sometimes most effective
 ];
 
-/// Quiet-hours window: notifications received between 00:00 and this hour are
-/// re-queued for the hour (07:00 local) rather than dropped.
+/// Quiet-hours window end: when quiet hours are ENABLED, notifications that
+/// would fire between 00:00 and this hour are re-queued for this hour.
 const QUIET_HOURS_END: u32 = 7;
-
-
 
 pub fn start_worker(app: AppHandle, db: Database) {
     std::thread::spawn(move || {
@@ -53,10 +53,6 @@ pub fn start_worker(app: AppHandle, db: Database) {
         loop {
             match q.claim_one("notifier-1") {
                 Ok(Some(job)) => {
-                    // Detach the fire onto its own thread so the worker can
-                    // immediately claim the next due job. Previously the
-                    // jitter sleep blocked the entire worker, serialising
-                    // simultaneous reminders behind up to 7 minutes each.
                     let app_thread = app.clone();
                     let db_thread = db.clone();
                     std::thread::spawn(move || {
@@ -79,8 +75,7 @@ pub fn start_worker(app: AppHandle, db: Database) {
 ///
 /// `job.ack()` is intentionally called late (after fire) so that if the
 /// process is killed mid-execution honker re-claims the job after its
-/// visibility timeout. Once we ack, the job is gone — we then enqueue a
-/// fresh retry job if attempts remain.
+/// visibility timeout.
 fn process_job(app: AppHandle, db: Database, job: Job) {
     let payload: Value = serde_json::from_slice(&job.payload).unwrap_or_default();
 
@@ -90,10 +85,7 @@ fn process_job(app: AppHandle, db: Database, job: Job) {
         .unwrap_or("something needs your attention")
         .to_string();
 
-    let attempt: u64 = payload
-        .get("attempt")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
+    let attempt: u64 = payload.get("attempt").and_then(|v| v.as_u64()).unwrap_or(0);
 
     let reminder_id = payload
         .get("reminder_id")
@@ -107,11 +99,17 @@ fn process_job(app: AppHandle, db: Database, job: Job) {
         .unwrap_or("")
         .to_string();
 
-    // ── Quiet hours ───────────────────────────────────────────────────────
-    // Re-enqueue for 07:00 local *today* (or tomorrow if it's already past
-    // 07:00 on a DST boundary). Previously this branch acked + emitted
-    // without re-enqueueing, silently dropping every overnight reminder.
-    if Local::now().hour() < QUIET_HOURS_END {
+    // Whether this is the exact-deadline ("due now") fire vs a pre-deadline
+    // nudge. Set by commands.rs at enqueue time so the UI can deterministically
+    // choose the due_now sound vs a random notify tone — no fragile clock-skew
+    // inference on the frontend.
+    let due = payload.get("due").and_then(|v| v.as_bool()).unwrap_or(true);
+
+    // ── Quiet hours (opt-in) ──────────────────────────────────────────────
+    // Default OFF. Previously this branch ran unconditionally and silently
+    // deferred EVERY overnight notification to 07:00 — which, for a night-owl
+    // user testing at 2am, looked exactly like "notifications are broken."
+    if quiet_hours_enabled(&app) && Local::now().hour() < QUIET_HOURS_END {
         let resume_at = next_local_time_at(QUIET_HOURS_END, 0);
         let q = db.queue("due_reminders", QueueOpts::default());
         let mut opts = EnqueueOpts::default();
@@ -123,21 +121,27 @@ fn process_job(app: AppHandle, db: Database, job: Job) {
     }
 
     // ── Pre-fire DB check ─────────────────────────────────────────────────
-    // Between enqueue and now the user may have completed or snoozed this reminder.
-    // Querying the DB here means we don't fire toasts the user has already resolved.
-    // here means we don't fire toasts the user has already resolved.
-    //
-    // Returns:
-    //   Ok(true)  — still pending, fire away
-    //   Ok(false) — resolved, skip (still ack the job + cancel the chain)
-    //   Err(_)    — DB error; fire anyway rather than silently swallow
-    //
-    // The check uses the occurrence_id (or reminder.id as fallback) so it
-    // works for both the original capture and snooze-rescheduled jobs.
+    // Between enqueue and now the user may have completed or snoozed this
+    // reminder. Skip firing toasts for resolved occurrences.
     let should_fire = should_fire(&app, &reminder_id, &occurrence_id).unwrap_or(true);
     if !should_fire {
         let _ = job.ack();
         return;
+    }
+
+    // ── Permission sanity check ───────────────────────────────────────────
+    // On macOS (and Windows with an unregistered AppUserModelID) `.show()`
+    // returns Ok but the toast never appears when permission isn't granted.
+    // Surface that in the log instead of leaving the user to guess. We still
+    // emit `reminder:fired` below regardless, so the in-app cue + sound fire
+    // even when the OS layer stays silent.
+    match app.notification().permission_state() {
+        Ok(PermissionState::Granted) => {}
+        Ok(other) => eprintln!(
+            "[yaad worker] OS notification permission is {other:?}; toast may not appear. \
+             In-app cue + sound will still fire."
+        ),
+        Err(e) => eprintln!("[yaad worker] permission_state error: {e}"),
     }
 
     // ── Build message body ────────────────────────────────────────────────
@@ -149,10 +153,6 @@ fn process_job(app: AppHandle, db: Database, job: Job) {
     };
 
     // ── Fire OS notification ──────────────────────────────────────────────
-    // tauri-plugin-notification dispatches to:
-    //   Windows → WinRT Toast (taskbar + Action Center)
-    //   macOS   → UNUserNotificationCenter (Notification Center)
-    //   Linux   → libnotify over DBus (requires libnotify installed)
     let fire_result = app
         .notification()
         .builder()
@@ -165,32 +165,39 @@ fn process_job(app: AppHandle, db: Database, job: Job) {
     }
 
     let _ = job.ack();
-
-    // Log the fire so future analytics / debugging has a trail.
     let _ = log_fire(&app, &reminder_id, &occurrence_id, fire_result.is_ok());
 
-    // Tell the UI to refresh
+    // Tell the UI to refresh + play its sound + show the in-app cue. This is
+    // the guaranteed-delivered path even when the OS toast is suppressed
+    // (Windows dev-mode AUMID, denied permission, etc).
     let _ = app.emit(
         "reminder:fired",
-        json!({ "reminder_id": reminder_id, "title": title }),
+        json!({ "reminder_id": reminder_id, "title": title, "due": due }),
     );
+}
+
+/// Read the `quiet_hours_enabled` setting. Absent or unparseable → false.
+fn quiet_hours_enabled(app: &AppHandle) -> bool {
+    let state = app.state::<AppState>();
+    let Ok(db) = state.db.lock() else { return false };
+    db.query_row(
+        "SELECT value FROM settings WHERE key = 'quiet_hours_enabled'",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .map(|v| v == "true" || v == "1")
+    .unwrap_or(false)
 }
 
 /// Query the DB: is the reminder still active AND is the targeted occurrence
 /// still pending? Either resolved/snoozed/completed answer means skip fire.
-fn should_fire(
-    app: &AppHandle,
-    reminder_id: &str,
-    occurrence_id: &str,
-) -> Result<bool, String> {
+fn should_fire(app: &AppHandle, reminder_id: &str, occurrence_id: &str) -> Result<bool, String> {
     if reminder_id.is_empty() {
-        return Ok(true); // legacy job without an id — fall through and fire
+        return Ok(true);
     }
     let state = app.state::<AppState>();
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
-    // Cheap reminder-level check first — covers the case where the user
-    // completed the reminder from any path.
     let status: rusqlite::Result<String> = db.query_row(
         "SELECT status FROM reminders WHERE id = ?1",
         rusqlite::params![reminder_id],
@@ -203,8 +210,6 @@ fn should_fire(
         Err(e) => return Err(e.to_string()),
     }
 
-    // Then occurrence-level — covers the snooze case where the old
-    // occurrence is marked `snoozed` and a new one was inserted.
     if !occurrence_id.is_empty() {
         let occ_state: rusqlite::Result<String> = db.query_row(
             "SELECT state FROM occurrences WHERE id = ?1",
@@ -222,14 +227,8 @@ fn should_fire(
     Ok(true)
 }
 
-/// Append a row to the dormant `notification_events` table so we can audit
-/// fire / skip behaviour later (and so the schema isn't dead weight).
-fn log_fire(
-    app: &AppHandle,
-    reminder_id: &str,
-    occurrence_id: &str,
-    success: bool,
-) -> Result<(), String> {
+/// Append a row to `notification_events` so fire/skip behaviour is auditable.
+fn log_fire(app: &AppHandle, reminder_id: &str, occurrence_id: &str, success: bool) -> Result<(), String> {
     let state = app.state::<AppState>();
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let outcome = if success { "fired" } else { "dispatch_failed" };
@@ -249,9 +248,8 @@ fn log_fire(
     Ok(())
 }
 
-/// Compute the next local timestamp at the given (hour, minute). If that
-/// time has already passed today, returns tomorrow's. Falls back to
-/// "1 hour from now" if the local datetime is invalid (DST gap).
+/// Next local timestamp at (hour, minute); tomorrow's if already past today.
+/// Falls back to "1 hour from now" on a DST gap.
 fn next_local_time_at(hour: u32, minute: u32) -> i64 {
     let now = Local::now();
     let time = NaiveTime::from_hms_opt(hour, minute, 0).expect("hh:mm in range");
@@ -266,20 +264,4 @@ fn next_local_time_at(hour: u32, minute: u32) -> i64 {
     } else {
         candidate.timestamp()
     }
-}
-
-/// Cheap deterministic hash for jitter — no extra dep needed. The
-/// `SystemTime::now()` subsec_nanos seed gives genuine per-call variance
-/// while the string-folding step keeps the output reasonably spread.
-#[allow(dead_code)]
-fn pseudo_rand(s: &str) -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.subsec_nanos() as u64)
-        .unwrap_or(42);
-    let h = s.bytes().fold(t, |acc, b| {
-        acc.wrapping_mul(6364136223846793005).wrapping_add(b as u64)
-    });
-    h ^ (h >> 33)
 }

@@ -19,6 +19,7 @@ pub fn parse(raw: &str) -> ParsedReminder {
         .or_else(|| try_today_at(&lower, &now, input))
         .or_else(|| try_tomorrow_at(&lower, &now, input))
         .or_else(|| try_weekday(&lower, &now, input))
+        .or_else(|| try_month_date(&lower, &now, input))
         .or_else(|| try_bare_time(&lower, &now, input));
 
     match parsed {
@@ -136,6 +137,105 @@ fn try_weekday(lower: &str, now: &DateTime<Local>, raw: &str) -> Option<ParsedRe
     None
 }
 
+/// "oct 25 at 3pm", "on September 15", "15 September"
+fn try_month_date(lower: &str, now: &DateTime<Local>, raw: &str) -> Option<ParsedReminder> {
+    use chrono::TimeZone;
+    let re_a = Regex::new(r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember|t)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{4}))?\b").ok()?;
+    let re_b = Regex::new(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember|t)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+(\d{4}))?\b").ok()?;
+
+    let (month_str, day_num, year_opt) = if let Some(cap) = re_a.captures(lower) {
+        let m = cap.get(1)?.as_str();
+        let d: u32 = cap.get(2)?.as_str().parse().ok()?;
+        let y: Option<i32> = cap.get(3).and_then(|x| x.as_str().parse().ok());
+        (m, d, y)
+    } else if let Some(cap) = re_b.captures(lower) {
+        let d: u32 = cap.get(1)?.as_str().parse().ok()?;
+        let m = cap.get(2)?.as_str();
+        let y: Option<i32> = cap.get(3).and_then(|x| x.as_str().parse().ok());
+        (m, d, y)
+    } else {
+        return None;
+    };
+
+    let month = month_to_num(month_str)?;
+    let mut year = year_opt.unwrap_or_else(|| now.year());
+
+    // Extract time if any (e.g. "at 5pm" or "noon"). Defaults to 9:00 AM if not specified.
+    let time = extract_time(lower).unwrap_or_else(|| NaiveTime::from_hms_opt(9, 0, 0).unwrap());
+
+    // Try to construct NaiveDate and Local DateTime
+    let naive_dt = chrono::NaiveDate::from_ymd_opt(year, month, day_num)?.and_time(time);
+    let mut fire_at = match Local.from_local_datetime(&naive_dt) {
+        chrono::LocalResult::Single(dt) => Some(dt),
+        chrono::LocalResult::Ambiguous(dt, _) => Some(dt),
+        chrono::LocalResult::None => None,
+    }?;
+
+    // If no year was specified, and the computed time is in the past, move to next year!
+    if year_opt.is_none() && fire_at <= *now {
+        year += 1;
+        let naive_dt = chrono::NaiveDate::from_ymd_opt(year, month, day_num)?.and_time(time);
+        fire_at = match Local.from_local_datetime(&naive_dt) {
+            chrono::LocalResult::Single(dt) => Some(dt),
+            chrono::LocalResult::Ambiguous(dt, _) => Some(dt),
+            chrono::LocalResult::None => None,
+        }?;
+    }
+
+    let title = strip_time_phrase(raw);
+    let month_label = month_name(month);
+    let time_label = fmt_time(&time);
+
+    let human_time = if year != now.year() {
+        format!("on {} {}, {} at {}", month_label, day_num, year, time_label)
+    } else {
+        format!("on {} {} at {}", month_label, day_num, time_label)
+    };
+
+    Some(ParsedReminder {
+        title,
+        fire_at_ms: fire_at.timestamp_millis(),
+        confidence: 0.94,
+        human_time,
+    })
+}
+
+fn month_to_num(m: &str) -> Option<u32> {
+    match m {
+        "jan" | "january" => Some(1),
+        "feb" | "february" => Some(2),
+        "mar" | "march" => Some(3),
+        "apr" | "april" => Some(4),
+        "may" => Some(5),
+        "jun" | "june" => Some(6),
+        "jul" | "july" => Some(7),
+        "aug" | "august" => Some(8),
+        "sep" | "sept" | "september" => Some(9),
+        "oct" | "october" => Some(10),
+        "nov" | "november" => Some(11),
+        "dec" | "december" => Some(12),
+        _ => None,
+    }
+}
+
+fn month_name(m: u32) -> &'static str {
+    match m {
+        1 => "Jan",
+        2 => "Feb",
+        3 => "Mar",
+        4 => "Apr",
+        5 => "May",
+        6 => "Jun",
+        7 => "Jul",
+        8 => "Aug",
+        9 => "Sep",
+        10 => "Oct",
+        11 => "Nov",
+        12 => "Dec",
+        _ => "",
+    }
+}
+
 /// Bare "at 5pm" → today if ahead, else tomorrow
 fn try_bare_time(lower: &str, now: &DateTime<Local>, raw: &str) -> Option<ParsedReminder> {
     let time = extract_time(lower)?;
@@ -248,7 +348,7 @@ fn strip_lead(s: &str) -> &str {
 /// risk a panicking slice.
 fn strip_time_phrase(raw: &str) -> String {
     let re = Regex::new(
-        r"(?i)\b(?:remind me to|remind me|remember to|remember|i need to|don'?t forget to|make sure to|make sure)?\s*(?:in\s+\d+\s*(?:mins?|minutes?|hrs?|hours?|days?)|tomorrow|today|next\s+\w+|on\s+\w+day|at\s+\d+(?::\d+)?\s*(?:am|pm)?|\d{1,2}(?::\d{2})?\s*(?:am|pm)|noon|midnight|morning|evening|night|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"
+        r"(?i)\b(?:remind me to|remind me|remember to|remember|i need to|don'?t forget to|make sure to|make sure)?\s*(?:in\s+\d+\s*(?:mins?|minutes?|hrs?|hours?|days?)|tomorrow|today|next\s+\w+|on\s+\w+day|at\s+\d+(?::\d+)?\s*(?:am|pm)?|\d{1,2}(?::\d{2})?\s*(?:am|pm)|noon|midnight|morning|evening|night|monday|tuesday|wednesday|thursday|friday|saturday|sunday|on\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember|t)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s+\d{4})?|on\s+\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember|t)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+\d{4})?|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember|t)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s+\d{4})?|\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember|t)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+\d{4})?)\b"
     ).expect("strip_time_phrase regex is valid");
 
     let lower = raw.to_lowercase();
@@ -321,5 +421,25 @@ mod tests {
 
         let p = parse("   ");
         assert_eq!(p.title, "untitled");
+    }
+
+    #[test]
+    fn test_parse_month_date() {
+        // Simple month date
+        let p = parse("buy milk on oct 25");
+        assert_eq!(p.title, "buy milk");
+        assert!(p.human_time.contains("Oct 25"));
+
+        // Day month format
+        let p = parse("meeting on 15 September at 3pm");
+        assert_eq!(p.title, "meeting");
+        assert!(p.human_time.contains("Sep 15"));
+        assert!(p.human_time.contains("3 PM"));
+
+        // No time specified (defaults to 9 AM)
+        let p = parse("do homework oct 25");
+        assert_eq!(p.title, "do homework");
+        assert!(p.human_time.contains("Oct 25"));
+        assert!(p.human_time.contains("9 AM"));
     }
 }

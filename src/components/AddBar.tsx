@@ -1,4 +1,5 @@
 import { createSignal, createEffect, onCleanup, Show } from "solid-js";
+import { Transition } from "solid-transition-group";
 import { invoke } from "@tauri-apps/api/core";
 import { PlusIcon } from "./icons";
 import { ParseToken } from "./ParseToken";
@@ -23,17 +24,21 @@ export interface AddBarProps {
 export function AddBar(props: AddBarProps) {
   const [value, setValue] = createSignal("");
   const [parsedText, setParsedText] = createSignal("");
+  const [isFocused, setIsFocused] = createSignal(false);
 
   let debounceTimer: number | undefined;
 
   createEffect(() => {
     const text = value();
-    if (!text.trim()) {
+    
+    // Always clear the old timer first so we don't get stale updates!
+    clearTimeout(debounceTimer);
+
+    if (text.trim().length < 3) {
       setParsedText("");
       return;
     }
 
-    clearTimeout(debounceTimer);
     debounceTimer = window.setTimeout(async () => {
       try {
         const res = await invoke<{ human_time: string }>("parse_time", {
@@ -66,6 +71,8 @@ export function AddBar(props: AddBarProps) {
           autocomplete="off"
           spellcheck={false}
           value={value()}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
           onInput={e => setValue(e.currentTarget.value)}
           onKeyDown={e => {
             if (e.key === "Enter") {
@@ -78,18 +85,21 @@ export function AddBar(props: AddBarProps) {
           class="add-btn"
           type="button"
           aria-label="Add reminder"
+          onMouseDown={e => e.preventDefault()}
           onClick={submit}
         >
           <PlusIcon />
         </button>
       </div>
 
-      <Show when={parsedText()}>
-        <div class="parse-preview">
-          <span class="parse-prefix">↳ will surface&nbsp;</span>
-          <ParseToken value={parsedText()} />
-        </div>
-      </Show>
+      <Transition name="preview">
+        <Show when={isFocused() && parsedText()}>
+          <div class="parse-preview">
+            <span class="parse-prefix">↳ will surface&nbsp;</span>
+            <ParseToken value={parsedText()} />
+          </div>
+        </Show>
+      </Transition>
     </footer>
   );
 }

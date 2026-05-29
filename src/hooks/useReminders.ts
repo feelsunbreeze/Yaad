@@ -1,8 +1,9 @@
 import { createSignal, createMemo, onMount, onCleanup } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createStore, reconcile } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Reminder, Tab, QuickTag, SnoozePreset } from "@/lib/types";
+import { showToast } from "@/lib/toast";
 
 /**
  * Wire shape returned by `list_reminders` / `list_completed`. Matches the
@@ -48,21 +49,21 @@ function endOfTodayMs(now: number): number {
  *                 the value here.
  */
 function mapBackend(b: BackendReminder, now: number): Reminder {
-  const done   = b.status === "completed";
+  const done = b.status === "completed";
   const fireAt = b.fire_at;
   const bucket: "today" | "upcoming" =
     fireAt === null || fireAt <= endOfTodayMs(now) ? "today" : "upcoming";
   const urgent = !done && fireAt !== null && fireAt <= now + URGENT_WINDOW_MS;
 
   return {
-    id:          b.id,
-    title:       b.title,
-    timeLabel:   b.human_time,
+    id: b.id,
+    title: b.title,
+    timeLabel: b.human_time,
     fireAt,
     completedAt: b.completed_at,
     done,
     urgent,
-    tag:         urgent ? { label: "important", tone: "warm" } : null,
+    tag: null,
     bucket,
   };
 }
@@ -88,13 +89,13 @@ export function useReminders() {
 
   const visible = createMemo<Reminder[]>(() => {
     const t = tab();
-    if (t === "done")  return reminders.filter(r => r.done);
+    if (t === "done") return reminders.filter(r => r.done);
     if (t === "today") return reminders.filter(r => !r.done && r.bucket === "today");
     return reminders.filter(r => !r.done && r.bucket === "upcoming");
   });
 
-  const total   = createMemo(() => reminders.length);
-  const done    = createMemo(() => reminders.filter(r => r.done).length);
+  const total = createMemo(() => reminders.length);
+  const done = createMemo(() => reminders.filter(r => r.done).length);
   const percent = createMemo(() =>
     total() === 0 ? 0 : Math.round((done() / total()) * 100)
   );
@@ -108,7 +109,7 @@ export function useReminders() {
         invoke<BackendReminder[]>("list_completed"),
       ]);
       const now = Date.now();
-      setReminders([...active, ...completed].map(b => mapBackend(b, now)));
+      setReminders(reconcile([...active, ...completed].map(b => mapBackend(b, now))));
       setError(null);
     } catch (e) {
       console.error("loadReminders failed:", e);
@@ -123,9 +124,12 @@ export function useReminders() {
     // a done card is a deliberate no-op until the Rust side grows one.
     if (r.done) return;
 
+    const bucket = r.bucket;
+
     // Optimistic flip — the check fills immediately, then reconcile with
     // backend truth on refresh.
     setReminders(x => x.id === id, "done", true);
+
     try {
       await invoke("complete", { id });
       await loadReminders();
@@ -191,7 +195,7 @@ export function useReminders() {
 
     void (async () => {
       await loadReminders();
-      unfire   = await listen("reminder:fired",         () => { void loadReminders(); });
+      unfire = await listen("reminder:fired", () => { void loadReminders(); });
       unsnooze = await listen("reminder:snoozed_quiet", () => { void loadReminders(); });
     })();
 

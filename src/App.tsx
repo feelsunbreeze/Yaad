@@ -12,9 +12,11 @@ import { Tabs } from "@/components/Tabs";
 import { ReminderList } from "@/components/ReminderList";
 import { AddBar } from "@/components/AddBar";
 import { useReminders } from "@/hooks/useReminders";
-import { formatDatePill, formatGreeting } from "@/lib/date";
+import { formatDatePill, formatGreeting, formatTimeLive } from "@/lib/date";
 import { Onboarding } from "@/components/Onboarding";
 import { SettingsModal } from "@/components/SettingsModal";
+import { SnoozeModal } from "@/components/SnoozeModal";
+import { Titlebar } from "@/components/Titlebar";
 
 /**
  * Notification permission bootstrap from PR #1 — preserved here because
@@ -47,7 +49,8 @@ async function ensureNotificationPermission(): Promise<void> {
  *
  * Layout follows the prototype exactly:
  *
- *   .app             (grid: auto 1fr auto, max 440px column)
+ *   .app             (grid: auto auto auto 1fr auto, max 440px column)
+ *   ├── Titlebar     (custom window minimize/close control bar)
  *   ├── .header      (greeting + progress + tabs, single rise animation)
  *   ├── .error-banner (mounted only when an invoke fails)
  *   ├── .list-wrap   (scrollable section + cards / empty state)
@@ -57,13 +60,16 @@ export default function App() {
   const r = useReminders();
 
   const [userName, setUserName] = createSignal<string | null>(null);
+  const [timeFormat, setTimeFormat] = createSignal<string>("12h");
+  const [snoozeReminderId, setSnoozeReminderId] = createSignal<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = createSignal(false);
   const [loadingInitial, setLoadingInitial] = createSignal(true);
 
-  // Re-evaluate greeting + date pill every minute
+  // Re-evaluate greeting + date pill + live time
   const [now, setNow] = createSignal(new Date());
   const greeting = createMemo(() => formatGreeting(now(), userName() || undefined));
   const date     = createMemo(() => formatDatePill(now()));
+  const time     = createMemo(() => formatTimeLive(now(), timeFormat()));
 
   onMount(async () => {
     void ensureNotificationPermission();
@@ -73,13 +79,16 @@ export default function App() {
       if (settings["name"]) {
         setUserName(settings["name"]);
       }
+      if (settings["time_format"]) {
+        setTimeFormat(settings["time_format"]);
+      }
     } catch (e) {
       console.error("Failed to load settings on mount", e);
     } finally {
       setLoadingInitial(false);
     }
 
-    const clockTick = window.setInterval(() => setNow(new Date()), 60_000);
+    const clockTick = window.setInterval(() => setNow(new Date()), 500);
     onCleanup(() => window.clearInterval(clockTick));
   });
 
@@ -95,8 +104,13 @@ export default function App() {
 
   return (
     <div class="app">
+      <Titlebar />
+
       {!loadingInitial() && !userName() && (
-        <Onboarding onComplete={(name) => setUserName(name)} />
+        <Onboarding onComplete={(name, format) => {
+          setUserName(name);
+          setTimeFormat(format);
+        }} />
       )}
       
       <SettingsModal 
@@ -104,6 +118,8 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         currentName={userName() || ""}
         onNameChange={(name) => setUserName(name)}
+        timeFormat={timeFormat()}
+        onTimeFormatChange={(fmt) => setTimeFormat(fmt)}
         onFactoryReset={handleFactoryReset}
       />
 
@@ -111,6 +127,7 @@ export default function App() {
         <Header
           greeting={greeting()}
           date={date()}
+          time={time()}
           onSettings={onSettings}
         />
         <ProgressBar
@@ -141,7 +158,19 @@ export default function App() {
         reminders={r.visible()}
         tab={r.tab()}
         onToggle={r.toggleDone}
-        onSnooze={r.snoozeReminder}
+        onSnoozeRequest={setSnoozeReminderId}
+      />
+
+      <SnoozeModal
+        isOpen={snoozeReminderId() !== null}
+        onClose={() => setSnoozeReminderId(null)}
+        onSubmit={(preset) => {
+          const id = snoozeReminderId();
+          if (id) {
+            r.snoozeReminder(id, preset);
+          }
+          setSnoozeReminderId(null);
+        }}
       />
 
       <AddBar onSubmit={r.addReminder} />

@@ -65,3 +65,22 @@ export function PlusIcon() {
     </svg>
   );
 }
+
+/**
+ * Tiny hourglass sort icon — two small triangles (⏳-ish) that evoke
+ * "reorder by time". The top triangle points up (soonest), the bottom
+ * points down (latest). During the flip animation CSS rotates the whole
+ * SVG 180° so the triangles swap, giving visual feedback on sort direction.
+ */
+export function SortTimeIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      {/* top triangle — points up */}
+      <polygon points="4,6 12,6 8,2" />
+      {/* bottom triangle — points down */}
+      <polygon points="4,10 12,10 8,14" />
+      {/* connecting waist */}
+      <line x1="8" y1="6" x2="8" y2="10" />
+    </svg>
+  );
+}

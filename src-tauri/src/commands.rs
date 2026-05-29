@@ -210,36 +210,37 @@ pub fn snooze(
         }
     }
 
-    let fire_at = match preset.as_str() {
-        "1h" => now + Duration::hours(1),
+    let (fire_at_ms, human) = match preset.as_str() {
+        "1h" => ((now + Duration::hours(1)).timestamp_millis(), "in 1 hour".to_string()),
         "tonight" => {
             let today_21 = at(now.date_naive(), 21, 0).ok_or("DST gap on tonight")?;
-            if today_21 > now {
+            let dt = if today_21 > now {
                 today_21
             } else {
                 at((now + Duration::days(1)).date_naive(), 21, 0)
                     .ok_or("DST gap on tonight (rollover)")?
-            }
+            };
+            (dt.timestamp_millis(), "tonight at 9 PM".to_string())
         }
-        "tomorrow" => at((now + Duration::days(1)).date_naive(), 9, 0)
-            .ok_or("DST gap on tomorrow")?,
-        "next_week" => at((now + Duration::days(7)).date_naive(), 9, 0)
-            .ok_or("DST gap on next_week")?,
-        _ => now + Duration::hours(1),
+        "tomorrow" => {
+            let dt = at((now + Duration::days(1)).date_naive(), 9, 0)
+                .ok_or("DST gap on tomorrow")?;
+            (dt.timestamp_millis(), "tomorrow at 9 AM".to_string())
+        }
+        "next_week" => {
+            let dt = at((now + Duration::days(7)).date_naive(), 9, 0)
+                .ok_or("DST gap on next_week")?;
+            (dt.timestamp_millis(), "next week".to_string())
+        }
+        custom_str => {
+            let parsed = parser::parse(custom_str);
+            (parsed.fire_at_ms, parsed.human_time)
+        }
     };
 
-    let fire_at_ms = fire_at.timestamp_millis();
-    let fire_at_s  = fire_at.timestamp();
+    let fire_at_s  = fire_at_ms / 1000;
     let occ_id     = Ulid::new().to_string();
     let db_now     = Utc::now().timestamp_millis();
-
-    let human = match preset.as_str() {
-        "1h"        => "in 1 hour".to_string(),
-        "tonight"   => "tonight at 9 PM".to_string(),
-        "tomorrow"  => "tomorrow at 9 AM".to_string(),
-        "next_week" => "next week".to_string(),
-        _           => "later".to_string(),
-    };
 
     let frequency = state.db.lock().unwrap().query_row(
         "SELECT value FROM settings WHERE key = 'notification_frequency'",

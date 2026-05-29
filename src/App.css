@@ -2,29 +2,35 @@
    that inject the @font-face rules. Drops the runtime fonts.googleapis.com
    dependency, plays nicely with the tightened CSP in tauri.conf.json, and
    keeps the app typographically correct offline. */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
 :root {
   /* ── Palette ─────────────────────────────────────────── */
-  --cream:    #F5EFE0;
-  --cream-2:  #EDE4CE;
-  --cream-3:  #E3D5B8;
+  --cream: #F5EFE0;
+  --cream-2: #EDE4CE;
+  --cream-3: #E3D5B8;
   --warm-mid: #C9B48A;
-  --amber:    #B8924A;
-  --amber-2:  #9C7A38;
-  --brown:    #5C4022;
-  --brown-2:  #3E2B14;
-  --text-main:#2E1F0D;
-  --text-mute:#8A6E4B;
-  --text-soft:#B09070;
+  --amber: #B8924A;
+  --amber-2: #9C7A38;
+  --brown: #5C4022;
+  --brown-2: #3E2B14;
+  --text-main: #2E1F0D;
+  --text-mute: #8A6E4B;
+  --text-soft: #B09070;
   --red-soft: #C96B5A;
   --red-deep: #b85544;
-  --green-soft:#6E9B7A;
-  --green-deep:#5e8567;
+  --green-soft: #74c189;
+  --green-deep: #adf3bd;
 
   /* ── Type ────────────────────────────────────────────── */
   --font-display: 'Lora', Georgia, serif;
-  --font-body:    'DM Sans', system-ui, sans-serif;
+  --font-body: 'DM Sans', system-ui, sans-serif;
 
   /* ── Easing curves — each one has a job ──────────────── */
   /* Spring overshoot. For affirmative/playful: hover lifts, popover bloom,
@@ -32,24 +38,25 @@
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   /* Standard interface motion. Symmetric and unobtrusive — use as the
      default for transforms, colors, and most hover transitions. */
-  --ease-snap:   cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-snap: cubic-bezier(0.4, 0, 0.2, 1);
   /* Decelerate: smooth landing for incoming elements. Use for fade-ins,
      content arriving, the start of a sequence. */
-  --ease-decel:  cubic-bezier(0, 0, 0.2, 1);
+  --ease-decel: cubic-bezier(0, 0, 0.2, 1);
   /* Accelerate: gathering pace as something leaves. Use for fade-outs,
      content departing, the end of a sequence. */
-  --ease-accel:  cubic-bezier(0.4, 0, 1, 1);
+  --ease-accel: cubic-bezier(0.4, 0, 1, 1);
   /* Smooth ease-in-out. Symmetric, for color washes that travel both
      directions equally. */
   --ease-smooth: cubic-bezier(0.45, 0, 0.55, 1);
 
   /* Legacy aliases — kept so existing rules below continue to read as
      intended. Prefer the named tokens above for new code. */
-  --ease:     var(--ease-spring);
+  --ease: var(--ease-spring);
   --ease-out: var(--ease-decel);
 }
 
-html, body {
+html,
+body {
   height: 100%;
   background: var(--cream);
   color: var(--text-main);
@@ -65,8 +72,8 @@ body::before {
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(ellipse 60% 50% at 15% 20%, rgba(184,146,74,0.13) 0%, transparent 70%),
-    radial-gradient(ellipse 50% 60% at 85% 80%, rgba(201,180,138,0.10) 0%, transparent 70%);
+    radial-gradient(ellipse 60% 50% at 15% 20%, rgba(184, 146, 74, 0.13) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 60% at 85% 80%, rgba(201, 180, 138, 0.10) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -76,22 +83,25 @@ body::before {
   z-index: 1;
   height: 100vh;
   display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: auto auto auto 1fr auto;
   max-width: 440px;
   margin: 0 auto;
-  padding: 0 1.5rem;
+  padding: 0 1.1rem;
 }
 
 /* ── HEADER ─────────────────────────────────────────────── */
 .header {
-  padding: 2rem 0 1.5rem;
+  grid-row: 2;
+  padding: 1.25rem 0 1rem;
   animation: rise 0.7s var(--ease-decel) both;
 }
+
 .header-top {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
 }
+
 .greeting {
   font-family: var(--font-display);
   font-size: 1.6rem;
@@ -100,24 +110,43 @@ body::before {
   color: var(--brown-2);
   letter-spacing: -0.02em;
 }
-.greeting em { font-style: italic; color: var(--amber-2); }
-.date-pill {
+
+.greeting em {
+  font-style: italic;
+  color: var(--amber-2);
+}
+
+.date-time-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 0.35rem;
+  padding-top: 0.75rem;
+}
+
+.date-pill,
+.time-pill {
   font-family: var(--font-body);
   font-size: 0.72rem;
   font-weight: 400;
   color: var(--text-soft);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  margin-top: 0.35rem;
-  padding-top: 0.75rem;
+}
+
+.time-pill {
+  font-variant-numeric: tabular-nums;
 }
 
 .icon-btn {
-  width: 38px; height: 38px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   background: var(--cream-2);
   border: 1.5px solid var(--cream-3);
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
   transition:
@@ -125,35 +154,54 @@ body::before {
     border-color 0.22s var(--ease-snap),
     transform 0.22s var(--ease-spring);
 }
+
 .icon-btn:hover {
   background: var(--cream-3);
   border-color: var(--warm-mid);
   transform: scale(1.08);
 }
-.icon-btn:active { transform: scale(0.94); }
+
+.icon-btn:active {
+  transform: scale(0.94);
+}
+
 .icon-btn svg {
-  width: 17px; height: 17px;
+  width: 17px;
+  height: 17px;
   stroke: var(--text-mute);
-  fill: none; stroke-width: 1.7;
-  stroke-linecap: round; stroke-linejoin: round;
+  fill: none;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   transition: stroke 0.22s var(--ease-snap);
 }
-.icon-btn:hover svg { stroke: var(--brown); }
+
+.icon-btn:hover svg {
+  stroke: var(--brown);
+}
 
 /* ── PROGRESS BAR ───────────────────────────────────────── */
 .progress-wrap {
-  margin-top: 1.25rem;
+  margin-top: 0.85rem;
   animation: rise 0.7s 0.1s var(--ease-decel) both;
 }
+
 .progress-label {
-  display: flex; justify-content: space-between;
-  font-size: 0.72rem; color: var(--text-soft);
-  letter-spacing: 0.03em; margin-bottom: 0.45rem;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--text-soft);
+  letter-spacing: 0.03em;
+  margin-bottom: 0.45rem;
 }
+
 .progress-track {
-  height: 5px; background: var(--cream-3);
-  border-radius: 99px; overflow: hidden;
+  height: 5px;
+  background: var(--cream-3);
+  border-radius: 99px;
+  overflow: hidden;
 }
+
 .progress-fill {
   height: 100%;
   background: linear-gradient(90deg, var(--amber) 0%, var(--amber-2) 100%);
@@ -162,66 +210,113 @@ body::before {
   transform-origin: left;
   transition: width 0.5s var(--ease-snap);
 }
+
 @keyframes fill-in {
-  from { transform: scaleX(0); }
-  to   { transform: scaleX(1); }
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 /* ── TABS ───────────────────────────────────────────────── */
 .tabs {
-  display: flex; gap: 0.25rem; padding: 0.3rem;
-  background: var(--cream-2); border-radius: 12px;
-  margin-top: 1.25rem;
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.3rem;
+  background: var(--cream-2);
+  border-radius: 12px;
+  margin-top: 0.85rem;
   animation: rise 0.7s 0.15s var(--ease-decel) both;
 }
+
 .tab {
-  flex: 1; padding: 0.4rem; border-radius: 9px;
-  text-align: center; font-family: var(--font-body);
-  font-size: 0.72rem; font-weight: 400; letter-spacing: 0.03em;
-  color: var(--text-soft); cursor: pointer;
+  flex: 1;
+  padding: 0.4rem;
+  border-radius: 9px;
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  color: var(--text-soft);
+  cursor: pointer;
   transition:
     background 0.25s var(--ease-decel),
     color 0.25s var(--ease-snap),
     transform 0.2s var(--ease-spring),
     box-shadow 0.25s var(--ease-snap);
 }
-.tab:hover { color: var(--text-mute); }
-.tab:active { transform: scale(0.96); }
+
+.tab:hover {
+  color: var(--text-mute);
+}
+
+.tab:active {
+  transform: scale(0.96);
+}
+
 .tab.active {
   background: var(--cream);
   color: var(--brown);
   font-weight: 500;
-  box-shadow: 0 1px 4px rgba(92,64,34,0.10);
+  box-shadow: 0 1px 4px rgba(92, 64, 34, 0.10);
 }
 
 /* ── REMINDER LIST ──────────────────────────────────────── */
 .list-wrap {
-  overflow-y: auto;
+  grid-row: 4;
+  /* overlay draws the scrollbar ON TOP of content — zero width reserved,
+     no layout shift when it appears or disappears. Chromium supports this;
+     Firefox falls back to the scrollbar-width: none approach below. */
+  overflow-y: overlay;
   overflow-x: hidden;
-  padding: 0.25rem 0 1rem;
   position: relative;
-  /* Firefox */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(201, 180, 138, 0.5) transparent;
+  /* Firefox: hide the gutter scrollbar entirely; we rely on JS + the
+     ::after fade-shadow to hint at overflow on that engine. */
+  scrollbar-width: none;
 }
-/* Webkit (Tauri's WebView is webkit-based on macOS/Linux, Chromium on Windows
-   — both honour these). Thin, rounded, subtle thumb in the warm-mid palette,
-   transparent track. Darkens on hover. */
+
+/* Webkit/Blink (Tauri on Windows uses Chromium's WebView2, macOS uses WKWebView):
+   give the thumb a fixed 4px lane, fully transparent until .scrolling is toggled. */
 .list-wrap::-webkit-scrollbar {
-  width: 5px;
+  width: 4px;
 }
+
 .list-wrap::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .list-wrap::-webkit-scrollbar-thumb {
-  background: rgba(201, 180, 138, 0.45);
+  background: transparent;
   border-radius: 99px;
-  transition: background 200ms var(--ease-snap);
+  /* smooth in/out — only the background color transitions, not width, so
+     there is absolutely no reflow. */
+  transition: background 300ms var(--ease-snap);
 }
-.list-wrap::-webkit-scrollbar-thumb:hover {
+
+/* Fade in when JS adds .scrolling, fade back out after the idle timer clears it */
+.list-wrap.scrolling::-webkit-scrollbar-thumb {
+  background: rgba(201, 180, 138, 0.5);
+}
+
+.list-wrap.scrolling::-webkit-scrollbar-thumb:hover {
   background: var(--warm-mid);
 }
-.list-wrap::-webkit-scrollbar-thumb:active {
+
+.list-wrap.scrolling::-webkit-scrollbar-thumb:active {
   background: var(--amber);
 }
 
@@ -242,60 +337,239 @@ body::before {
   right: 0;
   height: 18px;
   margin-top: -18px;
-  background: linear-gradient(
-    to top,
-    var(--cream) 35%,
-    transparent 100%
-  );
+  background: linear-gradient(to top,
+      var(--cream) 35%,
+      rgba(245, 239, 224, 0) 100%);
   pointer-events: none;
   opacity: 0;
   transition: opacity 240ms var(--ease-snap);
   display: block;
   z-index: 5;
 }
+
 .list-wrap.show-scroll-shadow::after {
   opacity: 1;
 }
 
-.section-label {
-  font-size: 0.67rem; font-weight: 500; letter-spacing: 0.1em;
-  text-transform: uppercase; color: var(--text-soft);
-  margin: 1.2rem 0 0.6rem 0.25rem;
+/* ── Section header row (label + sort button) ─────────── */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 0.6rem 0;
   opacity: 0;
   animation: rise 0.5s var(--ease-decel) forwards;
 }
 
+.section-label {
+  font-size: 0.67rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  margin: 0 0 0 0.25rem;
+}
+
+/* ── Sort toggle button ───────────────────────────────── */
+.sort-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 0.22s var(--ease-snap),
+    transform 0.35s var(--ease-spring);
+}
+
+.sort-btn svg {
+  width: 11px;
+  height: 11px;
+  fill: var(--text-soft);
+  stroke: var(--text-soft);
+  stroke-width: 0.8;
+  transition:
+    fill 0.22s var(--ease-snap),
+    stroke 0.22s var(--ease-snap),
+    transform 0.4s var(--ease-spring);
+}
+
+.sort-btn:hover {
+  background: var(--cream-2);
+  transform: scale(1.12);
+}
+
+.sort-btn:hover svg {
+  fill: var(--amber);
+  stroke: var(--amber);
+}
+
+.sort-btn:active {
+  transform: scale(0.9);
+}
+
+/* Flip the hourglass upside down when sorting latest-first */
+.sort-btn.flipped svg {
+  transform: rotate(180deg);
+}
+
+/* ── Custom Tooltip ───────────────────────────────────── */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) scale(0.95);
+  background: var(--text-main);
+  color: var(--cream);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 100;
+  transition:
+    opacity 0.2s var(--ease-decel),
+    transform 0.2s var(--ease-spring);
+}
+
+[data-tooltip]::after {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%) scale(0.95);
+  border: 4px solid transparent;
+  border-top-color: var(--text-main);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 100;
+  transition:
+    opacity 0.2s var(--ease-decel),
+    transform 0.2s var(--ease-spring);
+}
+
+[data-tooltip]:hover::before,
+[data-tooltip]:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+}
+
+.list-transition-grid {
+  display: grid;
+  align-items: start;
+}
+
+.list-transition-grid>* {
+  grid-area: 1 / 1;
+}
+
+.list-content.fade-out {
+  pointer-events: none;
+}
+
+.list-content.fade-out .section-header {
+  animation: fade-out-up 0.6s var(--ease-smooth) forwards;
+}
+
+@keyframes fade-out-up {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+
+.list-content.fade-out .list-bottom-spacer {
+  display: none;
+}
+
 /* ── REMINDER CARD ──────────────────────────────────────── */
 .reminder-card {
-  display: flex; align-items: center; gap: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
   padding: 0.9rem 1rem;
-  background: rgba(255,252,245,0.85);
-  border: 1.5px solid var(--cream-3);
+  background: rgba(255, 252, 245, 0.85);
   border-radius: 14px;
   margin-bottom: 0.55rem;
   cursor: pointer;
   opacity: 0;
   transform: translateY(14px);
   animation: rise 0.55s var(--ease-decel) forwards;
+  max-height: 8rem;
   transition:
     background 0.22s var(--ease-snap),
     border-color 0.22s var(--ease-snap),
     transform 0.25s var(--ease-spring),
-    box-shadow 0.22s var(--ease-snap);
+    box-shadow 0.22s var(--ease-snap),
+    max-height 1.0s var(--ease-decel),
+    padding 0.85s var(--ease-decel),
+    margin 0.85s var(--ease-decel),
+    border-width 0.85s var(--ease-decel),
+    opacity 0.8s var(--ease-decel);
   position: relative;
   overflow: visible;
 }
 
+.list-content.sorting-active .reminder-card {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Collapse smoothly with a slightly longer duration to feel intentional */
+  transition:
+    max-height 0.40s var(--ease-smooth),
+    padding 0.40s var(--ease-smooth),
+    margin 0.40s var(--ease-smooth),
+    border-width 0.40s var(--ease-smooth),
+    opacity 0.35s var(--ease-accel);
+}
+
 .reminder-card:hover {
-  background: rgba(255,253,248,0.95);
+  background: rgba(255, 253, 248, 0.95);
   border-color: var(--warm-mid);
   transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(92,64,34,0.09);
+  box-shadow: 0 4px 16px rgba(92, 64, 34, 0.09);
 }
-.reminder-card:active { transform: translateY(0px) scale(0.985); }
-.reminder-card.done { opacity: 0.48; }
-.reminder-card.done .reminder-title { text-decoration: line-through; color: var(--text-soft); }
-.reminder-card.snooze-open { z-index: 10; }
+
+.reminder-card:active {
+  transform: translateY(0px) scale(0.985);
+}
+
+.reminder-card.done {
+  opacity: 0.48;
+}
+
+.reminder-card.done .reminder-title {
+  text-decoration: line-through;
+  color: var(--text-soft);
+}
+
+.reminder-card.snooze-open {
+  z-index: 10;
+}
 
 /* ── COMPLETION SEQUENCE ───────────────────────────────── */
 /* Split into two back-to-back animations so the visual ceremony (check
@@ -324,42 +598,49 @@ body::before {
 .reminder-card.completing {
   pointer-events: none;
   overflow: hidden;
+  transform: translateY(0);
   animation:
-    card-fade 1250ms var(--ease-snap) forwards,
-    card-collapse 250ms var(--ease-snap) 1250ms forwards;
+    card-fade 1700ms var(--ease-snap) forwards,
+    card-collapse 500ms var(--ease-snap) 1250ms forwards;
 }
+
 @keyframes card-fade {
   0% {
-    background: rgba(255,252,245,0.85);
+    background: rgba(255, 252, 245, 0.85);
     border-color: var(--cream-3);
     box-shadow: 0 0 0 transparent;
     opacity: 1;
   }
+
   35% {
-    background: rgba(255,252,245,0.85);
+    background: rgba(255, 252, 245, 0.85);
     border-color: var(--cream-3);
     box-shadow: 0 0 0 transparent;
     opacity: 1;
   }
+
   60% {
-    background: rgba(110,155,122,0.16);
-    border-color: rgba(110,155,122,0.5);
-    box-shadow: 0 4px 20px rgba(110,155,122,0.18);
+    background: color-mix(in srgb, var(--green-soft) 16%, transparent);
+    border-color: color-mix(in srgb, var(--green-soft) 50%, transparent);
+    box-shadow: 0 4px 20px color-mix(in srgb, var(--green-soft) 18%, transparent);
     opacity: 1;
   }
+
   84% {
-    background: rgba(110,155,122,0.16);
-    border-color: rgba(110,155,122,0.5);
-    box-shadow: 0 4px 20px rgba(110,155,122,0.18);
+    background: color-mix(in srgb, var(--green-soft) 16%, transparent);
+    border-color: color-mix(in srgb, var(--green-soft) 50%, transparent);
+    box-shadow: 0 4px 20px color-mix(in srgb, var(--green-soft) 18%, transparent);
     opacity: 1;
   }
+
   100% {
-    background: rgba(110,155,122,0.05);
+    background: color-mix(in srgb, var(--green-soft) 5%, transparent);
     border-color: transparent;
     box-shadow: 0 0 0 transparent;
     opacity: 0;
   }
 }
+
 @keyframes card-collapse {
   from {
     max-height: var(--natural-height, 6rem);
@@ -369,6 +650,7 @@ body::before {
     border-top-width: 1.5px;
     border-bottom-width: 1.5px;
   }
+
   to {
     max-height: 0;
     padding-top: 0;
@@ -383,31 +665,44 @@ body::before {
 /* check circle */
 .check-wrap {
   flex-shrink: 0;
-  width: 26px; height: 26px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   border: 1.8px solid var(--cream-3);
   background: var(--cream-2);
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition:
     background 0.25s var(--ease-snap),
     border-color 0.25s var(--ease-snap),
     transform 0.25s var(--ease-spring);
 }
-.reminder-card:hover .check-wrap { border-color: var(--amber); }
+
+.reminder-card:hover .check-wrap {
+  border-color: var(--amber);
+}
+
 .check-wrap.checked {
   background: var(--amber);
   border-color: var(--amber);
 }
+
 .check-wrap svg {
-  width: 13px; height: 13px;
+  width: 13px;
+  height: 13px;
   stroke: var(--cream);
   fill: none;
   stroke-width: 2.2;
-  stroke-linecap: round; stroke-linejoin: round;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   opacity: 0;
   transition: opacity 0.2s var(--ease-snap);
 }
-.check-wrap.checked svg { opacity: 1; }
+
+.check-wrap.checked svg {
+  opacity: 1;
+}
 
 /* During the completion animation, the check circle blooms (a small
    over-shoot scale) and the polyline strokes in via stroke-dashoffset —
@@ -420,22 +715,39 @@ body::before {
   border-color: var(--amber);
   animation: check-bloom 550ms var(--ease-spring) forwards;
 }
+
 @keyframes check-bloom {
-  0%   { transform: scale(1); }
-  50%  { transform: scale(1.18); }
-  100% { transform: scale(1.05); }
+  0% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.18);
+  }
+
+  100% {
+    transform: scale(1.05);
+  }
 }
+
 .reminder-card.completing .check-wrap svg {
   opacity: 1;
   stroke-dasharray: 25;
   stroke-dashoffset: 25;
-  animation: draw-check 500ms var(--ease-decel) 50ms forwards;
-}
-@keyframes draw-check {
-  to { stroke-dashoffset: 0; }
+  animation: draw-check 800ms var(--ease-decel) 50ms forwards;
 }
 
-.reminder-body { flex: 1; min-width: 0; }
+@keyframes draw-check {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.reminder-body {
+  flex: 1;
+  min-width: 0;
+}
+
 .reminder-title {
   font-family: var(--font-body);
   font-size: 0.88rem;
@@ -447,24 +759,34 @@ body::before {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
 .reminder-meta {
-  display: flex; align-items: center; gap: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   margin-top: 0.25rem;
 }
+
 .meta-time {
   font-size: 0.7rem;
   color: var(--text-soft);
   font-weight: 300;
-  display: flex; align-items: center; gap: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
 }
+
 .meta-time svg {
-  width: 11px; height: 11px;
+  width: 11px;
+  height: 11px;
   stroke: currentColor;
   fill: none;
   stroke-width: 1.8;
-  stroke-linecap: round; stroke-linejoin: round;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   flex-shrink: 0;
 }
+
 .meta-tag {
   font-size: 0.63rem;
   padding: 0.15rem 0.5rem;
@@ -472,16 +794,48 @@ body::before {
   letter-spacing: 0.03em;
   font-weight: 400;
 }
-.tag-warm   { background: rgba(184,146,74,0.14);  color: var(--amber-2); }
-.tag-green  { background: rgba(110,155,122,0.14); color: var(--green-soft); }
-.tag-red    { background: rgba(201,107,90,0.14);  color: var(--red-soft); }
-.tag-muted  { background: var(--cream-3);         color: var(--text-soft); }
-.reminder-right {
-  flex-shrink: 0; display: flex; align-items: center; gap: 0.4rem;
+
+.tag-warm {
+  background: rgba(184, 146, 74, 0.14);
+  color: var(--amber-2);
 }
-.dot { width: 7px; height: 7px; border-radius: 50%; }
-.dot-red { background: var(--red-soft); }
-.completed-time { font-style: italic; color: var(--text-soft); }
+
+.tag-green {
+  background: rgba(110, 155, 122, 0.14);
+  color: var(--green-soft);
+}
+
+.tag-red {
+  background: rgba(201, 107, 90, 0.14);
+  color: var(--red-soft);
+}
+
+.tag-muted {
+  background: var(--cream-3);
+  color: var(--text-soft);
+}
+
+.reminder-right {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.dot-red {
+  background: var(--red-soft);
+}
+
+.completed-time {
+  font-style: italic;
+  color: var(--text-soft);
+}
 
 /* ── EMPTY STATE ───────────────────────────────────────── */
 /* No delay on the rise animation. When the last card unmounts after its
@@ -490,25 +844,48 @@ body::before {
    opacity 0 + max-height 0 when it unmounts, so there's no visible gap
    between "card disappears" and "empty state begins fading in". */
 .empty-state {
-  display: flex; flex-direction: column; align-items: center;
-  padding: 3rem 0; gap: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3rem 0;
+  gap: 0.75rem;
   opacity: 0;
-  animation: rise 0.6s var(--ease-decel) forwards;
+  animation: fade-in 1s 0.2s var(--ease-smooth) both;
 }
+
 .empty-icon {
-  width: 52px; height: 52px;
+  width: 52px;
+  height: 52px;
   background: var(--cream-2);
   border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 1.5px solid var(--cream-3);
 }
+
 .empty-icon svg {
-  width: 24px; height: 24px;
+  width: 24px;
+  height: 24px;
   stroke: var(--warm-mid);
   fill: none;
   stroke-width: 1.5;
-  stroke-linecap: round; stroke-linejoin: round;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
+
+.greeting em {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-style: italic;
+  font-size: 1.4rem;
+  color: var(--text-mute);
+}
+
+.greeting-name {
+  animation: fade-in 1s var(--ease-smooth) both;
+}
+
 .empty-text {
   font-family: var(--font-display);
   font-style: italic;
@@ -526,16 +903,20 @@ body::before {
    anchored input began. Now the shadow + solid background creates a
    clean shelf edge. */
 .add-bar {
-  padding: 0.85rem 0 2rem;
+  grid-row: 5;
+  padding: 0.85rem 0 1.25rem;
   background: var(--cream);
   position: relative;
   z-index: 10;
   box-shadow: 0 -8px 16px -8px rgba(92, 64, 34, 0.07);
   animation: rise 0.6s 0.3s var(--ease-decel) both;
 }
+
 .add-input-wrap {
-  display: flex; align-items: center; gap: 0.65rem;
-  background: rgba(255,252,245,0.9);
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: rgba(255, 252, 245, 0.9);
   border: 1.5px solid var(--cream-3);
   border-radius: 14px;
   padding: 0.65rem 0.65rem 0.65rem 1rem;
@@ -543,10 +924,12 @@ body::before {
     border-color 0.25s var(--ease-snap),
     box-shadow 0.25s var(--ease-snap);
 }
+
 .add-input-wrap:focus-within {
   border-color: var(--amber);
-  box-shadow: 0 0 0 3px rgba(184,146,74,0.12);
+  box-shadow: 0 0 0 3px rgba(184, 146, 74, 0.12);
 }
+
 .add-input {
   flex: 1;
   background: none;
@@ -558,33 +941,47 @@ body::before {
   color: var(--text-main);
   caret-color: var(--amber);
 }
+
 .add-input::placeholder {
   color: var(--text-soft);
   font-style: italic;
 }
+
 .add-btn {
-  width: 32px; height: 32px;
+  width: 32px;
+  height: 32px;
   border-radius: 9px;
   background: var(--amber);
   border: none;
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
   transition:
     background 0.2s var(--ease-snap),
     transform 0.22s var(--ease-spring);
 }
-.add-btn:hover { background: var(--amber-2); transform: scale(1.08); }
-.add-btn:active { transform: scale(0.94); }
+
+.add-btn:hover {
+  background: var(--amber-2);
+  transform: scale(1.08);
+}
+
+.add-btn:active {
+  transform: scale(0.94);
+}
+
 .add-btn svg {
-  width: 16px; height: 16px;
+  width: 16px;
+  height: 16px;
   stroke: var(--cream);
   fill: none;
   stroke-width: 2.2;
-  stroke-linecap: round; stroke-linejoin: round;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-/* ── ADDBAR PARSE PREVIEW ──────────────────────────────── */
 .parse-preview {
   font-family: var(--font-body);
   font-size: 0.75rem;
@@ -592,16 +989,19 @@ body::before {
   margin-top: 0.5rem;
   margin-left: 0.5rem;
   font-style: italic;
-  animation: rise 0.3s var(--ease-decel) both;
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
   gap: 0;
+  overflow: hidden;
+  height: 18px;
 }
+
 .parse-prefix {
   /* The static prefix never re-animates — only the token swaps. */
   flex-shrink: 0;
 }
+
 .parse-token-wrap {
   position: relative;
   display: inline-block;
@@ -609,41 +1009,107 @@ body::before {
   /* Wrap takes the width of the incoming token; outgoing is absolutely
      positioned so it doesn't push layout. */
 }
+
 .parse-token {
   display: inline-block;
   white-space: nowrap;
   font-style: italic;
   color: var(--amber-2);
 }
+
 .parse-token-in {
   /* Each value change re-mounts this span (via keyed <Show>) so the
      keyframe re-triggers — text content changes alone don't restart CSS
      animations. */
   animation: token-in 240ms var(--ease-decel) both;
 }
+
 .parse-token-out {
   position: absolute;
   left: 0;
   top: 0;
-  animation: token-out 240ms var(--ease-accel) both;
+  animation: token-out 200ms var(--ease-snap) both;
   pointer-events: none;
 }
-@keyframes token-in {
-  0%   { opacity: 0; transform: translateY(6px); }
-  100% { opacity: 1; transform: translateY(0); }
+
+/* ── PREVIEW TRANSITION ────────────────────────────────── */
+.preview-enter {
+  opacity: 0;
+  transform: translateY(8px);
+  height: 0;
+  margin-top: 0;
 }
+
+.preview-enter-active {
+  transition:
+    opacity 0.3s var(--ease-smooth),
+    transform 0.3s var(--ease-smooth),
+    height 0.3s var(--ease-smooth),
+    margin-top 0.3s var(--ease-smooth);
+}
+
+.preview-enter-to {
+  opacity: 1;
+  transform: translateY(0);
+  height: 18px;
+  margin-top: 0.5rem;
+}
+
+.preview-exit {
+  opacity: 1;
+  transform: translateY(0);
+  height: 18px;
+  margin-top: 0.5rem;
+}
+
+.preview-exit-active {
+  transition:
+    opacity 0.3s var(--ease-smooth),
+    transform 0.3s var(--ease-smooth),
+    height 0.3s var(--ease-smooth),
+    margin-top 0.3s var(--ease-smooth);
+}
+
+.preview-exit-to {
+  opacity: 0;
+  transform: translateY(8px);
+  height: 0;
+  margin-top: 0;
+}
+
+@keyframes token-in {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes token-out {
-  0%   { opacity: 1; transform: translateY(0); }
-  100% { opacity: 0; transform: translateY(-6px); }
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
 }
 
 /* ── QUICK TAGS (legacy — kept for backwards compat) ─── */
 .quick-tags {
-  display: flex; gap: 0.4rem;
+  display: flex;
+  gap: 0.4rem;
   margin-top: 0.6rem;
   padding-left: 0.1rem;
   flex-wrap: wrap;
 }
+
 .quick-tag {
   font-size: 0.67rem;
   padding: 0.25rem 0.65rem;
@@ -658,13 +1124,18 @@ body::before {
     color 0.2s var(--ease-snap),
     transform 0.22s var(--ease-spring);
 }
+
 .quick-tag:hover {
   background: var(--cream-2);
   border-color: var(--warm-mid);
   color: var(--text-mute);
   transform: scale(1.04);
 }
-.quick-tag:active { transform: scale(0.96); }
+
+.quick-tag:active {
+  transform: scale(0.96);
+}
+
 .quick-tag.selected {
   background: var(--amber);
   border-color: var(--amber);
@@ -673,20 +1144,53 @@ body::before {
 
 /* ── ANIMATIONS ────────────────────────────────────────── */
 @keyframes rise {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
-.card-pop { animation: card-pop 0.4s var(--ease-spring) both !important; }
+
+.card-pop {
+  animation: card-pop 0.4s var(--ease-spring) both !important;
+}
+
 @keyframes card-pop {
-  0%   { opacity: 0; transform: scale(0.92) translateY(8px); }
-  100% { opacity: 1; transform: scale(1)    translateY(0); }
+  0% {
+    opacity: 0;
+    transform: scale(0.92) translateY(8px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
-.check-bounce { animation: check-bounce 0.35s var(--ease-spring) !important; }
+
+.check-bounce {
+  animation: check-bounce 0.35s var(--ease-spring) !important;
+}
+
 @keyframes check-bounce {
-  0%   { transform: scale(1); }
-  40%  { transform: scale(0.8); }
-  70%  { transform: scale(1.18); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+
+  40% {
+    transform: scale(0.8);
+  }
+
+  70% {
+    transform: scale(1.18);
+  }
+
+  100% {
+    transform: scale(1);
+  }
 }
 
 /* ── SNOOZE AFFORDANCE ─────────────────────────────────── */
@@ -707,19 +1211,24 @@ body::before {
     color 0.2s var(--ease-snap),
     transform 0.22s var(--ease-spring);
 }
+
 .action-btn:hover {
   background: var(--cream-2);
   border-color: var(--warm-mid);
   color: var(--text-mute);
   transform: scale(1.04);
 }
-.action-btn:active { transform: scale(0.96); }
+
+.action-btn:active {
+  transform: scale(0.96);
+}
 
 .snooze-wrap {
   position: relative;
   display: flex;
   align-items: center;
 }
+
 .snooze-popover {
   position: absolute;
   top: calc(100% + 0.5rem);
@@ -736,10 +1245,19 @@ body::before {
   box-shadow: 0 8px 28px rgba(92, 64, 34, 0.12);
   animation: popover-in 220ms var(--ease-spring) both;
 }
+
 @keyframes popover-in {
-  from { opacity: 0; transform: translateY(-4px) scale(0.96); }
-  to   { opacity: 1; transform: translateY(0)     scale(1);   }
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
+
 .snooze-option {
   background: transparent;
   border: none;
@@ -756,11 +1274,15 @@ body::before {
     color 0.18s var(--ease-snap),
     transform 0.18s var(--ease-spring);
 }
+
 .snooze-option:hover {
   background: var(--cream-2);
   color: var(--brown);
 }
-.snooze-option:active { transform: scale(0.98); }
+
+.snooze-option:active {
+  transform: scale(0.98);
+}
 
 /* ── ERROR BANNER ──────────────────────────────────────── */
 .error-banner {
@@ -777,7 +1299,11 @@ body::before {
   gap: 0.5rem;
   animation: rise 0.4s var(--ease-decel) both;
 }
-.error-banner-text { flex: 1; }
+
+.error-banner-text {
+  flex: 1;
+}
+
 .error-banner-dismiss {
   background: transparent;
   border: none;
@@ -789,7 +1315,10 @@ body::before {
   opacity: 0.7;
   transition: opacity 0.2s var(--ease-snap);
 }
-.error-banner-dismiss:hover { opacity: 1; }
+
+.error-banner-dismiss:hover {
+  opacity: 1;
+}
 
 /* ── MODALS & OVERLAYS ─────────────────────────────────── */
 /* The .modal-overlay + .modal-content pair is rendered by the reusable
@@ -810,16 +1339,37 @@ body::before {
   padding: 1rem;
   animation: backdrop-in 260ms var(--ease-decel) both;
 }
+
 @keyframes backdrop-in {
-  from { opacity: 0; backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0); }
-  to   { opacity: 1; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0);
+    -webkit-backdrop-filter: blur(0);
+  }
+
+  to {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
 }
+
 .modal-overlay.closing {
   animation: backdrop-out 240ms var(--ease-accel) both;
 }
+
 @keyframes backdrop-out {
-  from { opacity: 1; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-  to   { opacity: 0; backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0); }
+  from {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  to {
+    opacity: 0;
+    backdrop-filter: blur(0);
+    -webkit-backdrop-filter: blur(0);
+  }
 }
 
 .modal-content {
@@ -832,16 +1382,33 @@ body::before {
   box-shadow: 0 12px 40px rgba(92, 64, 34, 0.14);
   animation: modal-in 280ms var(--ease-spring) both;
 }
+
 @keyframes modal-in {
-  from { opacity: 0; transform: scale(0.94) translateY(8px); }
-  to   { opacity: 1; transform: scale(1)    translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
+
 .modal-overlay.closing .modal-content {
   animation: modal-out 240ms var(--ease-accel) both;
 }
+
 @keyframes modal-out {
-  from { opacity: 1; transform: scale(1)    translateY(0); }
-  to   { opacity: 0; transform: scale(0.96) translateY(4px); }
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
 }
 
 .modal-header {
@@ -850,6 +1417,7 @@ body::before {
   justify-content: space-between;
   margin-bottom: 1.5rem;
 }
+
 .modal-header h2 {
   font-family: var(--font-display);
   font-size: 1.4rem;
@@ -877,11 +1445,13 @@ body::before {
     background 0.18s var(--ease-snap),
     transform 0.24s var(--ease-spring);
 }
+
 .modal-close:hover {
   color: var(--red-soft);
   background: rgba(201, 107, 90, 0.08);
   transform: scale(1.08) rotate(90deg);
 }
+
 .modal-close:active {
   transform: scale(0.94) rotate(90deg);
 }
@@ -894,12 +1464,15 @@ body::before {
   max-width: 360px;
   padding: 1.4rem 1.4rem 1.25rem;
 }
+
 .modal-confirm .modal-header {
   margin-bottom: 0.85rem;
 }
+
 .modal-confirm .modal-header h2 {
   font-size: 1.2rem;
 }
+
 .modal-message {
   font-family: var(--font-body);
   font-size: 0.85rem;
@@ -908,11 +1481,13 @@ body::before {
   line-height: 1.55;
   margin-bottom: 1.25rem;
 }
+
 .modal-actions {
   display: flex;
   gap: 0.5rem;
   justify-content: flex-end;
 }
+
 .modal-actions .settings-btn {
   min-width: 80px;
 }
@@ -921,6 +1496,7 @@ body::before {
 .settings-section {
   margin-bottom: 1.5rem;
 }
+
 .settings-section label {
   display: block;
   font-family: var(--font-body);
@@ -931,17 +1507,21 @@ body::before {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+
 .settings-desc {
   font-size: 0.75rem;
   color: var(--text-soft);
   margin-bottom: 0.6rem;
   line-height: 1.3;
 }
+
 .settings-row {
   display: flex;
   gap: 0.5rem;
 }
-.settings-input, .settings-select {
+
+.settings-input,
+.settings-select {
   flex: 1;
   background: var(--cream);
   border: 1.5px solid var(--cream-3);
@@ -953,10 +1533,13 @@ body::before {
   outline: none;
   transition: border-color 0.22s var(--ease-snap), box-shadow 0.22s var(--ease-snap);
 }
-.settings-input:focus, .settings-select:focus {
+
+.settings-input:focus,
+.settings-select:focus {
   border-color: var(--amber);
   box-shadow: 0 0 0 3px rgba(184, 146, 74, 0.12);
 }
+
 .settings-slider {
   width: 100%;
   accent-color: var(--amber);
@@ -979,12 +1562,16 @@ body::before {
     transform 0.22s var(--ease-spring),
     box-shadow 0.22s var(--ease-snap);
 }
+
 .settings-btn:hover {
   background: var(--cream-3);
   border-color: var(--warm-mid);
   transform: scale(1.02);
 }
-.settings-btn:active { transform: scale(0.96); }
+
+.settings-btn:active {
+  transform: scale(0.96);
+}
 
 /* Outlined-danger — used in the Settings panel for the factory-reset
    trigger. Restrained, not loud. */
@@ -993,6 +1580,7 @@ body::before {
   color: var(--red-soft);
   border-color: rgba(201, 107, 90, 0.35);
 }
+
 .settings-btn.danger:hover {
   background: rgba(201, 107, 90, 0.12);
   border-color: var(--red-soft);
@@ -1007,11 +1595,13 @@ body::before {
   border-color: var(--red-soft);
   color: var(--cream);
 }
+
 .settings-btn.danger-solid:hover {
   background: var(--red-deep);
   border-color: var(--red-deep);
   box-shadow: 0 4px 14px rgba(201, 107, 90, 0.28);
 }
+
 .settings-btn.danger-solid:active {
   box-shadow: 0 2px 6px rgba(201, 107, 90, 0.18);
 }
@@ -1023,6 +1613,7 @@ body::before {
   border-color: var(--amber);
   color: var(--cream);
 }
+
 .settings-btn.primary:hover {
   background: var(--amber-2);
   border-color: var(--amber-2);
@@ -1048,14 +1639,17 @@ body::before {
   transition: opacity 0.45s var(--ease-snap);
   pointer-events: none;
 }
+
 .onboarding-overlay.open {
   opacity: 1;
   pointer-events: all;
 }
+
 .onboarding-overlay.closing {
   opacity: 0;
   pointer-events: none;
 }
+
 .onboarding-content {
   max-width: 400px;
   width: 100%;
@@ -1067,10 +1661,12 @@ body::before {
     transform 0.6s var(--ease-decel),
     opacity 0.6s var(--ease-decel);
 }
+
 .onboarding-overlay.open .onboarding-content {
   transform: translateY(0);
   opacity: 1;
 }
+
 .onboarding-content h1 {
   font-family: var(--font-display);
   font-size: 2.5rem;
@@ -1078,12 +1674,14 @@ body::before {
   color: var(--brown-2);
   margin-bottom: 0.5rem;
 }
+
 .onboarding-content p {
   font-family: var(--font-body);
   font-size: 1rem;
   color: var(--text-mute);
   margin-bottom: 2rem;
 }
+
 .onboarding-input-wrap {
   display: flex;
   align-items: center;
@@ -1095,10 +1693,12 @@ body::before {
     border-color 0.3s var(--ease-snap),
     box-shadow 0.3s var(--ease-snap);
 }
+
 .onboarding-input-wrap:focus-within {
   border-color: var(--amber);
   box-shadow: 0 0 0 4px rgba(184, 146, 74, 0.15);
 }
+
 .onboarding-input {
   flex: 1;
   background: transparent;
@@ -1109,10 +1709,12 @@ body::before {
   font-size: 1.1rem;
   color: var(--text-main);
 }
+
 .onboarding-input::placeholder {
   color: var(--text-soft);
   font-style: italic;
 }
+
 .onboarding-btn {
   width: 44px;
   height: 44px;
@@ -1129,13 +1731,16 @@ body::before {
     transform 0.24s var(--ease-spring),
     opacity 0.22s var(--ease-snap);
 }
+
 .onboarding-btn:hover:not(:disabled) {
   background: var(--amber-2);
   transform: scale(1.05);
 }
+
 .onboarding-btn:active:not(:disabled) {
   transform: scale(0.95);
 }
+
 .onboarding-btn:disabled {
   background: var(--cream-3);
   opacity: 0.6;
@@ -1144,8 +1749,320 @@ body::before {
 
 /* ── REDUCED MOTION ────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* -- TOAST ----------------------------------------------- */
+.toast-pill {
+  position: absolute;
+  bottom: 5.5rem;
+  left: 50%;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1rem;
+  background: var(--cream);
+  border: 1.5px solid var(--amber);
+  border-radius: 99px;
+  color: var(--brown);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 500;
+  box-shadow: 0 8px 24px -6px rgba(92, 64, 34, 0.25);
+  animation: toast-sequence 2s var(--ease-spring) forwards;
+  pointer-events: none;
+}
+
+.toast-icon-wrap {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toast-icon-wrap svg {
+  width: 100%;
+  height: 100%;
+  stroke: var(--amber-2);
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@keyframes toast-sequence {
+  0% {
+    transform: translate(-50%, 25px) scale(0.9);
+    opacity: 0;
+  }
+
+  10% {
+    transform: translate(-50%, -4px) scale(1.02);
+    opacity: 1;
+  }
+
+  15% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 1;
+  }
+
+  85% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translate(-50%, 15px) scale(0.9);
+    opacity: 0;
+  }
+}
+
+/* ── SEGMENTED CONTROL ─────────────────────────────────── */
+.segmented-control {
+  display: flex;
+  background: var(--cream-2);
+  border: 1.5px solid var(--cream-3);
+  border-radius: 12px;
+  padding: 3px;
+  gap: 4px;
+  position: relative;
+}
+
+.segment-option {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-radius: 9px;
+  padding: 0.6rem;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-soft);
+  cursor: pointer;
+  transition:
+    background 0.25s var(--ease-snap),
+    color 0.25s var(--ease-snap),
+    transform 0.15s var(--ease-spring),
+    box-shadow 0.25s var(--ease-snap);
+  outline: none;
+}
+
+.segment-option:hover:not(.active) {
+  color: var(--text-main);
+  background: rgba(245, 239, 224, 0.4);
+}
+
+.segment-option:active {
+  transform: scale(0.97);
+}
+
+.segment-option.active {
+  background: var(--cream);
+  color: var(--brown);
+  box-shadow: 0 2px 6px rgba(92, 64, 34, 0.08);
+}
+
+/* ── SNOOZE MODAL ──────────────────────────────────────── */
+.snooze-input-wrap {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 252, 245, 0.9);
+  border: 1.5px solid var(--cream-3);
+  border-radius: 14px;
+  padding: 0.4rem;
+  transition:
+    border-color 0.25s var(--ease-snap),
+    box-shadow 0.25s var(--ease-snap);
+}
+
+.snooze-input-wrap:focus-within {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 3px rgba(184, 146, 74, 0.12);
+}
+
+.snooze-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0.5rem 0.8rem;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  color: var(--text-main);
+}
+
+.snooze-input::placeholder {
+  color: var(--text-soft);
+  font-style: italic;
+}
+
+.snooze-save-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--amber);
+  border: none;
+  color: var(--cream);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    background 0.22s var(--ease-snap),
+    transform 0.24s var(--ease-spring),
+    opacity 0.22s var(--ease-snap);
+}
+
+.snooze-save-btn:hover:not(:disabled) {
+  background: var(--amber-2);
+  transform: scale(1.06);
+}
+
+.snooze-save-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.snooze-save-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.snooze-preview {
+  margin-top: 0.65rem;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  color: var(--text-mute);
+  display: flex;
+  align-items: center;
+  animation: rise 0.4s var(--ease-decel) both;
+}
+
+.snooze-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.preset-pill-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--cream-2);
+  border: 1.5px solid var(--cream-3);
+  border-radius: 12px;
+  padding: 0.7rem;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--brown);
+  cursor: pointer;
+  transition:
+    background 0.2s var(--ease-snap),
+    border-color 0.2s var(--ease-snap),
+    transform 0.2s var(--ease-spring),
+    box-shadow 0.2s var(--ease-snap);
+}
+
+.preset-pill-btn:hover {
+  background: var(--cream-3);
+  border-color: var(--warm-mid);
+  transform: scale(1.02);
+}
+
+.preset-pill-btn:active {
+  transform: scale(0.96);
+}
+
+.preset-desc {
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: var(--text-soft);
+  margin-top: 0.15rem;
+}
+
+/* ── CUSTOM TITLEBAR ────────────────────────────────────── */
+.titlebar {
+  grid-row: 1;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* No extra padding — .app already has 1.1rem side padding applied */
+  padding: 0.5rem 0 0;
+  user-select: none;
+  cursor: default;
+}
+
+.titlebar-label {
+  font-family: var(--font-body);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  opacity: 0.55;
+  /* Prevent it from becoming a drag-cancel zone */
+  pointer-events: none;
+}
+
+.titlebar-actions {
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.titlebar-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-soft);
+  opacity: 0.6;
+  transition:
+    background 0.18s var(--ease-snap),
+    color 0.18s var(--ease-snap),
+    opacity 0.18s var(--ease-snap),
+    transform 0.2s var(--ease-spring);
+}
+
+.titlebar-btn svg {
+  width: 9px;
+  height: 9px;
+  stroke-linejoin: round;
+}
+
+.titlebar-btn:hover {
+  background: var(--cream-3);
+  color: var(--brown);
+  opacity: 1;
+  transform: scale(1.08);
+}
+
+.titlebar-btn:active {
+  transform: scale(0.92);
+}
+
+.titlebar-btn.close:hover {
+  background: rgba(201, 107, 90, 0.15);
+  color: var(--red-soft);
+}
+
+.titlebar-btn.minimize:hover {
+  background: rgba(184, 146, 74, 0.12);
+  color: var(--amber);
 }

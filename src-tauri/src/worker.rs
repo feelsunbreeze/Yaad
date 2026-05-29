@@ -271,6 +271,7 @@ fn next_local_time_at(hour: u32, minute: u32) -> i64 {
 /// Cheap deterministic hash for jitter — no extra dep needed. The
 /// `SystemTime::now()` subsec_nanos seed gives genuine per-call variance
 /// while the string-folding step keeps the output reasonably spread.
+#[allow(dead_code)]
 fn pseudo_rand(s: &str) -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     let t = SystemTime::now()

@@ -13,11 +13,12 @@
     "windows": [
       {
         "title": "Yaad",
-        "width": 460,
-        "height": 720,
-        "minWidth": 400,
-        "minHeight": 540,
-        "decorations": true,
+        "width": 380,
+        "height": 580,
+        "minWidth": 380,
+        "maxWidth": 380,
+        "minHeight": 400,
+        "decorations": false,
         "transparent": false,
         "resizable": true
       }
@@ -41,10 +42,18 @@
     "longDescription": "Yaad is a small, calm reminder app. Capture a thought with the inline bar, and a background worker fires native OS notifications with built-in jitter and pattern-interrupt framing so ADHD brains actually catch the alert.",
     "linux": {
       "deb": {
-        "depends": ["libnotify4 (>= 0.7.7)", "libwebkit2gtk-4.1-0", "libgtk-3-0"]
+        "depends": [
+          "libnotify4 (>= 0.7.7)",
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0"
+        ]
       },
       "rpm": {
-        "depends": ["libnotify >= 0.7.7", "webkit2gtk4.1", "gtk3"]
+        "depends": [
+          "libnotify >= 0.7.7",
+          "webkit2gtk4.1",
+          "gtk3"
+        ]
       },
       "appimage": {
         "bundleMediaFramework": true

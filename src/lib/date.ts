@@ -36,25 +36,21 @@ export function formatDatePill(d: Date = new Date()): string {
   return `${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
-export function formatGreeting(d: Date = new Date(), name?: string): { lead: string; tail: string } {
+export function formatGreeting(d: Date = new Date(), name?: string): { lead: string; name?: string; tail: string } {
   const h = d.getHours();
-  let lead: string;
-  if (h < 5) lead = "still up,";
-  else if (h < 12) lead = "good morning,";
-  else if (h < 17) lead = "good afternoon,";
-  else if (h < 22) lead = "good evening,";
-  else lead = "winding down,";
+  let base: string;
+  if (h < 5) base = "still up";
+  else if (h < 12) base = "good morning";
+  else if (h < 17) base = "good afternoon";
+  else if (h < 22) base = "good evening";
+  else base = "winding down";
 
   const n = name ? name.toLowerCase() : undefined;
-  if (n) {
-    if (lead.endsWith(",")) {
-      lead = lead.slice(0, -1) + ` ${n},`;
-    } else {
-      lead = `${lead} ${n},`;
-    }
-  }
+  const isStillUp = h < 5;
+  const punc = isStillUp ? "?" : ",";
+  const lead = n ? base : `${base}${punc}`;
 
-  return { lead, tail: "take it easy." };
+  return { lead, name: n ? ` ${n}${punc}` : undefined, tail: "take it easy." };
 }
 
 /**
@@ -91,4 +87,19 @@ export function formatRelativeLive(fireAtMs: number, nowMs: number = Date.now())
   if (hours > 0) return `in ${hours}h ${minutes}m`;
   if (minutes > 0) return `in ${minutes}m ${seconds}s`;
   return `in ${seconds}s`;
+}
+
+export function formatTimeLive(d: Date = new Date(), format: string = "12h"): string {
+  let hrs = d.getHours();
+  const mins = String(d.getMinutes()).padStart(2, "0");
+  const secs = String(d.getSeconds()).padStart(2, "0");
+  if (format === "24h") {
+    const hoursStr = String(hrs).padStart(2, "0");
+    return `${hoursStr}:${mins}:${secs}`;
+  } else {
+    const ampm = hrs >= 12 ? "pm" : "am";
+    hrs = hrs % 12;
+    hrs = hrs ? hrs : 12; // hour '0' is '12'
+    return `${hrs}:${mins}:${secs} ${ampm}`;
+  }
 }

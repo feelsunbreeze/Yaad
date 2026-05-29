@@ -8,6 +8,8 @@ export interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onNameChange: (newName: string) => void;
+  timeFormat: string;
+  onTimeFormatChange: (fmt: string) => void;
   onFactoryReset: () => void;
 }
 
@@ -69,6 +71,15 @@ export function SettingsModal(props: SettingsModalProps) {
     }
   }
 
+  async function updateTimeFormat(fmt: string) {
+    try {
+      await invoke("set_settings", { key: "time_format", value: fmt });
+      props.onTimeFormatChange(fmt);
+    } catch (err) {
+      console.error("Failed to save time format", err);
+    }
+  }
+
   function requestFactoryReset() {
     setIsResetConfirmOpen(true);
   }
@@ -109,6 +120,26 @@ export function SettingsModal(props: SettingsModalProps) {
             />
             <button class="settings-btn" type="button" onClick={saveName}>
               Save
+            </button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <label>Time Format</label>
+          <div class="segmented-control">
+            <button
+              type="button"
+              class={`segment-option${props.timeFormat === "12h" ? " active" : ""}`}
+              onClick={() => updateTimeFormat("12h")}
+            >
+              12-Hour (1:51 PM)
+            </button>
+            <button
+              type="button"
+              class={`segment-option${props.timeFormat === "24h" ? " active" : ""}`}
+              onClick={() => updateTimeFormat("24h")}
+            >
+              24-Hour (13:51)
             </button>
           </div>
         </div>

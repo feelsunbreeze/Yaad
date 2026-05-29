@@ -1,20 +1,13 @@
 import { Show, For, createSignal, createEffect, onCleanup } from "solid-js";
-import type { Reminder, SnoozePreset } from "@/lib/types";
+import type { Reminder } from "@/lib/types";
 import { CheckIcon, ClockIcon } from "./icons";
 import { formatResolvedAgo, formatRelativeLive } from "@/lib/date";
 
 export interface ReminderCardProps {
   reminder: Reminder;
   onToggle: (id: string) => void;
-  onSnooze: (id: string, preset: SnoozePreset) => void;
+  onSnoozeRequest: (id: string) => void;
 }
-
-const SNOOZE_OPTIONS: { id: SnoozePreset; label: string }[] = [
-  { id: "1h",        label: "in 1 hour"  },
-  { id: "tonight",   label: "tonight"    },
-  { id: "tomorrow",  label: "tomorrow"   },
-  { id: "next_week", label: "next week"  },
-];
 
 /**
  * Total length (ms) of the completion sequence, including the isolated
@@ -30,7 +23,7 @@ const SNOOZE_OPTIONS: { id: SnoozePreset; label: string }[] = [
  * mounted for the full ceremony before the hook's optimistic flip removes
  * it from the visible list.
  */
-const COMPLETION_DURATION_MS = 1500;
+const COMPLETION_DURATION_MS = 1750;
 
 /**
  * A single reminder row. The visual is unchanged from the prototype —
@@ -55,7 +48,6 @@ const COMPLETION_DURATION_MS = 1500;
  * completing card is fully invisible.
  */
 export function ReminderCard(props: ReminderCardProps) {
-  const [snoozeOpen, setSnoozeOpen] = createSignal(false);
   const [isCompleting, setIsCompleting] = createSignal(false);
   const [now, setNow] = createSignal(Date.now());
 
@@ -74,7 +66,6 @@ export function ReminderCard(props: ReminderCardProps) {
   const cardClass = () => {
     const classes = ["reminder-card"];
     if (props.reminder.done) classes.push("done");
-    if (snoozeOpen()) classes.push("snooze-open");
     if (isCompleting()) classes.push("completing");
     return classes.join(" ");
   };
@@ -83,13 +74,8 @@ export function ReminderCard(props: ReminderCardProps) {
     // Don't toggle when:
     //   - already done (backend has no reopen)
     //   - animation already in flight (double-click guard)
-    //   - the snooze popover is open — first click dismisses the popover
     if (props.reminder.done) return;
     if (isCompleting()) return;
-    if (snoozeOpen()) {
-      setSnoozeOpen(false);
-      return;
-    }
 
     // Pin the natural height as a CSS variable so the collapse keyframe
     // animates from "this card's actual height" to 0, rather than from a
@@ -106,30 +92,7 @@ export function ReminderCard(props: ReminderCardProps) {
     onCleanup(() => window.clearTimeout(t));
   }
 
-  // Outside-click + Escape close the snooze popover. Effect re-subscribes
-  // whenever snoozeOpen flips so we don't leak listeners.
-  createEffect(() => {
-    if (!snoozeOpen()) return;
-    const closeOnClick = () => setSnoozeOpen(false);
-    const closeOnEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSnoozeOpen(false);
-    };
-    const t = window.setTimeout(() => {
-      window.addEventListener("click", closeOnClick);
-    }, 0);
-    window.addEventListener("keydown", closeOnEsc);
-    onCleanup(() => {
-      window.clearTimeout(t);
-      window.removeEventListener("click", closeOnClick);
-      window.removeEventListener("keydown", closeOnEsc);
-    });
-  });
 
-  function pickSnooze(preset: SnoozePreset, e: MouseEvent) {
-    e.stopPropagation();
-    setSnoozeOpen(false);
-    props.onSnooze(props.reminder.id, preset);
-  }
 
   const showMeta = () =>
     !props.reminder.done &&
@@ -192,32 +155,13 @@ export function ReminderCard(props: ReminderCardProps) {
             <button
               type="button"
               class="action-btn"
-              aria-haspopup="menu"
-              aria-expanded={snoozeOpen()}
               onClick={e => {
                 e.stopPropagation();
-                setSnoozeOpen(prev => !prev);
+                props.onSnoozeRequest?.(props.reminder.id);
               }}
             >
               later
             </button>
-
-            <Show when={snoozeOpen()}>
-              <div class="snooze-popover" role="menu">
-                <For each={SNOOZE_OPTIONS}>
-                  {opt => (
-                    <button
-                      type="button"
-                      class="snooze-option"
-                      role="menuitem"
-                      onClick={e => pickSnooze(opt.id, e)}
-                    >
-                      {opt.label}
-                    </button>
-                  )}
-                </For>
-              </div>
-            </Show>
           </div>
         </Show>
       </div>

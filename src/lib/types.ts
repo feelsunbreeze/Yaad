@@ -13,8 +13,8 @@ export type Tab = "today" | "upcoming" | "done";
 /** Tone of the small pill rendered next to a reminder's time. */
 export type TagTone = "warm" | "green" | "red" | "muted";
 
-/** Snooze presets understood by the Rust `snooze` IPC command. */
-export type SnoozePreset = "1h" | "tonight" | "tomorrow" | "next_week";
+/** Snooze presets and custom natural language strings understood by the Rust `snooze` IPC. */
+export type SnoozePreset = string;
 
 export interface ReminderTag {
   /** lowercase display text, e.g. "important" */

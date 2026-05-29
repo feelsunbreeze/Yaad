@@ -18,6 +18,7 @@ import { Onboarding } from "@/components/Onboarding";
 import { SettingsModal } from "@/components/SettingsModal";
 import { SnoozeModal } from "@/components/SnoozeModal";
 import { Titlebar } from "@/components/Titlebar";
+import { ToastRoot } from "@/components/Toast";
 
 /**
  * Notification permission bootstrap from PR #1 — preserved here because
@@ -44,11 +45,11 @@ async function ensureNotificationPermission(): Promise<void> {
 
 /**
  * Thin composition root. Reminder data lifecycle (initial fetch, OS event
- * subscriptions, 60s relative-time tick, visibility pause) lives inside
- * `useReminders`. App owns the notification permission flow, the greeting
- * clock, and the test-alert hook on the gear icon.
+ * subscriptions, visibility refresh) lives inside `useReminders`. App owns
+ * the notification permission flow, the greeting clock, and the test-alert
+ * hook on the gear icon.
  *
- * Layout follows the prototype exactly:
+ * Layout:
  *
  *   .app             (grid: auto auto auto 1fr auto, max 440px column)
  *   ├── Titlebar     (custom window minimize/close control bar)
@@ -56,6 +57,9 @@ async function ensureNotificationPermission(): Promise<void> {
  *   ├── .error-banner (mounted only when an invoke fails)
  *   ├── .list-wrap   (scrollable section + cards / empty state)
  *   └── .add-bar     (input + quick tags)
+ *
+ *   ToastRoot        (fixed-position in-app notification cue, fires on
+ *                     reminder:fired even when the OS toast is suppressed)
  */
 export default function App() {
   const r = useReminders();
@@ -155,9 +159,9 @@ export default function App() {
           setTimeFormat(format);
         }} />
       )}
-      
-      <SettingsModal 
-        isOpen={isSettingsOpen()} 
+
+      <SettingsModal
+        isOpen={isSettingsOpen()}
         onClose={() => setIsSettingsOpen(false)}
         currentName={userName() || ""}
         onNameChange={(name) => setUserName(name)}
@@ -219,6 +223,8 @@ export default function App() {
       />
 
       <AddBar onSubmit={r.addReminder} />
+
+      <ToastRoot />
     </div>
   );
 }

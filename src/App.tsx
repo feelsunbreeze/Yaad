@@ -11,6 +11,7 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { Tabs } from "@/components/Tabs";
 import { ReminderList } from "@/components/ReminderList";
 import { AddBar } from "@/components/AddBar";
+import { playSfx } from "@/lib/audio";
 import { useReminders } from "@/hooks/useReminders";
 import { formatDatePill, formatGreeting, formatTimeLive } from "@/lib/date";
 import { Onboarding } from "@/components/Onboarding";
@@ -89,7 +90,49 @@ export default function App() {
     }
 
     const clockTick = window.setInterval(() => setNow(new Date()), 500);
-    onCleanup(() => window.clearInterval(clockTick));
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.ctrlKey && e.key === "Tab") {
+        e.preventDefault(); // Prevent default OS/browser tab switching
+        return;
+      }
+
+      // Ignore single-character shortcuts if the user is typing in an input
+      const activeTag = document.activeElement?.tagName;
+      if (activeTag === "INPUT" || activeTag === "TEXTAREA") {
+        return;
+      }
+
+      if (e.key === "/") {
+        e.preventDefault();
+        const input = document.querySelector(".add-input") as HTMLInputElement | null;
+        input?.focus();
+      } else if (/^[1-9]$/.test(e.key)) {
+        e.preventDefault();
+        const index = parseInt(e.key, 10) - 1;
+        const cards = document.querySelectorAll(".reminder-card");
+        if (cards[index]) {
+          (cards[index] as HTMLElement).focus();
+        }
+      }
+    }
+
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.key === "Tab" && e.ctrlKey) {
+        e.preventDefault();
+        playSfx("tabSwitch");
+        r.setTab(r.tab() === "today" ? "upcoming" : "today");
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+
+    onCleanup(() => {
+      window.clearInterval(clockTick);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    });
   });
 
   function onSettings() {
@@ -135,7 +178,7 @@ export default function App() {
           total={r.total()}
           percent={r.percent()}
         />
-        <Tabs current={r.tab()} onChange={r.setTab} />
+        <Tabs current={r.tab()} onChange={(t) => { playSfx("tabSwitch"); r.setTab(t); }} />
       </header>
 
       <Show when={r.error()} keyed>
@@ -159,6 +202,8 @@ export default function App() {
         tab={r.tab()}
         onToggle={r.toggleDone}
         onSnoozeRequest={setSnoozeReminderId}
+        shakingTaskId={r.shakingTaskId()}
+        onLoadMore={r.loadMoreCompleted}
       />
 
       <SnoozeModal

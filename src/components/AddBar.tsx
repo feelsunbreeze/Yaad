@@ -78,6 +78,8 @@ export function AddBar(props: AddBarProps) {
             if (e.key === "Enter") {
               e.preventDefault();
               submit();
+            } else if (e.key === "Escape") {
+              e.currentTarget.blur();
             }
           }}
         />

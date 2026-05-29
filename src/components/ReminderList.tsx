@@ -1,7 +1,8 @@
-import { For, Show, createSignal, onMount, onCleanup, createMemo } from "solid-js";
+import { For, Show, createSignal, onMount, onCleanup, createMemo, createEffect } from "solid-js";
 import type { Reminder, Tab } from "@/lib/types";
 import { ReminderCard } from "./ReminderCard";
 import { SmileIcon, SortTimeIcon } from "./icons";
+import { playSfx } from "@/lib/audio";
 
 const SECTION_LABEL: Record<Tab, string> = {
   today: "to do",
@@ -24,6 +25,10 @@ export interface ReminderListProps {
   onToggle: (id: string) => void;
   /** Callback to request a snooze modal for a reminder card. */
   onSnoozeRequest: (id: string) => void;
+  /** ID of a newly added task that triggered an auto-switch. */
+  shakingTaskId?: string | null;
+  /** Callback to load more completed tasks */
+  onLoadMore?: () => void;
 }
 
 /**
@@ -44,6 +49,25 @@ export function ReminderList(props: ReminderListProps) {
   let listContentRef: HTMLDivElement | undefined;
   const [showShadow, setShowShadow] = createSignal(false);
   const [isScrolling, setIsScrolling] = createSignal(false);
+
+  // Track if we just switched between today and upcoming
+  const [fastSwitch, setFastSwitch] = createSignal(false);
+  let prevTab = props.tab;
+
+  createEffect(() => {
+    const current = props.tab;
+    const isFast = (prevTab === "today" && current === "upcoming") || (prevTab === "upcoming" && current === "today");
+
+    if (isFast) {
+      setFastSwitch(true);
+      const t = setTimeout(() => setFastSwitch(false), 350);
+      onCleanup(() => clearTimeout(t));
+    } else {
+      setFastSwitch(false);
+    }
+
+    prevTab = current;
+  });
 
   // ── Sort toggle ──────────────────────────────────────────────
   // true = soonest first (ascending fireAt), false = latest first
@@ -103,6 +127,12 @@ export function ReminderList(props: ReminderListProps) {
       setIsScrolling(true);
       clearTimeout(idleTimer);
       idleTimer = window.setTimeout(() => setIsScrolling(false), 1200);
+
+      if (props.tab === "done" && props.onLoadMore) {
+        if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+          props.onLoadMore();
+        }
+      }
     }
 
     el.addEventListener("scroll", onScroll, { passive: true });
@@ -132,31 +162,149 @@ export function ReminderList(props: ReminderListProps) {
 
   const isEmpty = () => props.reminders.length === 0;
 
+  const [showSectionHeader, setShowSectionHeader] = createSignal(!isEmpty());
+  let prevTabHeader = props.tab;
+
+  createEffect(() => {
+    const empty = isEmpty();
+    const tabSwitched = prevTabHeader !== props.tab;
+    prevTabHeader = props.tab;
+
+    if (empty) {
+      if (tabSwitched) {
+        setShowSectionHeader(false);
+      } else {
+        const t = setTimeout(() => setShowSectionHeader(false), 600);
+        onCleanup(() => clearTimeout(t));
+      }
+    } else {
+      setShowSectionHeader(true);
+    }
+  });
+
+  // ── Easter egg & Smiley Wobbly Scaling ───────────────
+  const [smileyClickCount, setSmileyClickCount] = createSignal(0);
+  const [smileyState, setSmileyState] = createSignal({ x: 0, y: 0, hover: false, pressed: false });
+
+  const smileyTransform = createMemo(() => {
+    const { x, y, hover, pressed } = smileyState();
+    if (!hover) return "";
+
+    // Wobbly effect: dramatic rotation and scale up
+    const rotateX = -y / 0.5;
+    const rotateY = x / 0.5;
+
+    // Squeeze down slightly when clicked for dynamic feedback
+    const scale = pressed ? 1.05 : 1.3;
+    return `perspective(400px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(${scale})`;
+  });
+
+  const autoSwitch = createMemo(() => !!props.shakingTaskId);
+
+  let prevCount = props.reminders.length;
+  let prevTabEffect = props.tab;
+
+  createEffect(() => {
+    const currentCount = props.reminders.length;
+    const currentTab = props.tab;
+
+    // Trigger confetti when list becomes empty (and we didn't just switch tabs)
+    if (prevTabEffect === currentTab && prevCount > 0 && currentCount === 0 && (currentTab === "today" || currentTab === "upcoming")) {
+      // Wait for the empty-state fade-in animation to fully complete (1.2s)
+      // before importing and firing confetti so we don't jank the CSS transition.
+      setTimeout(triggerConfetti, 1050);
+    }
+
+    prevCount = currentCount;
+    prevTabEffect = currentTab;
+  });
+
+  function handleSmileyMove(e: MouseEvent) {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = e.clientX - rect.left - rect.width / 2;
+    const y = e.clientY - rect.top - rect.height / 2;
+    setSmileyState(s => ({ ...s, x, y, hover: true }));
+  }
+
+  function handleSmileyLeave() {
+    setSmileyState(s => ({ ...s, hover: false, pressed: false }));
+  }
+
+  function handleSmileyDown() {
+    setSmileyState(s => ({ ...s, pressed: true }));
+  }
+
+  function handleSmileyUp() {
+    setSmileyState(s => ({ ...s, pressed: false }));
+  }
+
+  function handleSmileyClick() {
+    setSmileyClickCount(c => c + 1);
+    if (smileyClickCount() >= 5) {
+      triggerConfetti();
+      setSmileyClickCount(0);
+    }
+  }
+
+  async function triggerConfetti() {
+    // Dynamic import first to avoid network latency messing up our audio timing
+    const confetti = (await import('canvas-confetti')).default;
+
+    playSfx("allDone");
+
+    // Wait slightly so the visual burst hits exactly on the peak of the audio pop
+    await new Promise(r => setTimeout(r, 150));
+
+    // Lightweight dual burst
+    confetti({
+      particleCount: 50,
+      angle: 60,
+      spread: 60,
+      origin: { x: 0, y: 0.65 },
+      colors: ['#B8924A', '#C96B5A', '#74c189', '#F5EFE0'],
+      disableForReducedMotion: true,
+      zIndex: 1000
+    });
+    confetti({
+      particleCount: 50,
+      angle: 120,
+      spread: 60,
+      origin: { x: 1, y: 0.65 },
+      colors: ['#B8924A', '#C96B5A', '#74c189', '#F5EFE0'],
+      disableForReducedMotion: true,
+      zIndex: 1000
+    });
+  }
+
   return (
     <main ref={listRef} class={listClass()}>
       <div class="list-transition-grid">
-        <div class="list-content" ref={listContentRef} classList={{ "fade-out": isEmpty(), "sorting-active": isSorting() }}>
-          <div class="section-header">
-            <p class="section-label">{SECTION_LABEL[props.tab]}</p>
-            <Show when={props.tab !== "done"}>
-              <button
-                type="button"
-                class="sort-btn"
-                classList={{ flipped: !sortAsc() }}
-                aria-label={sortAsc() ? "Sorted soonest first" : "Sorted latest first"}
-                data-tooltip={sortAsc() ? "Soonest first" : "Latest first"}
-                onClick={toggleSort}
-              >
-                <SortTimeIcon />
-              </button>
-            </Show>
-          </div>
+        <div class="list-content" ref={listContentRef} classList={{ "fade-out": isEmpty(), "sorting-active": isSorting(), "fast-switch": fastSwitch() && !autoSwitch(), "auto-switch": autoSwitch() }}>
+          <Show when={showSectionHeader()}>
+            <div class="section-header">
+              <p class="section-label">{SECTION_LABEL[props.tab]}</p>
+              <Show when={props.tab !== "done"}>
+                <button
+                  type="button"
+                  class="sort-btn"
+                  classList={{ flipped: !sortAsc() }}
+                  aria-label={sortAsc() ? "Sorted soonest first" : "Sorted latest first"}
+                  data-tooltip={sortAsc() ? "Soonest first" : "Latest first"}
+                  onClick={toggleSort}
+                >
+                  <SortTimeIcon />
+                </button>
+              </Show>
+            </div>
+          </Show>
           <For each={sorted()}>
             {r => (
               <ReminderCard
                 reminder={r}
                 onToggle={props.onToggle}
                 onSnoozeRequest={props.onSnoozeRequest}
+                suppressRise={autoSwitch()}
+                isShaking={props.shakingTaskId === r.id}
               />
             )}
           </For>
@@ -165,7 +313,15 @@ export function ReminderList(props: ReminderListProps) {
 
         <Show when={isEmpty()}>
           <div class="empty-state">
-            <div class="empty-icon">
+            <div
+              class="empty-icon"
+              onMouseDown={handleSmileyDown}
+              onMouseUp={handleSmileyUp}
+              onClick={handleSmileyClick}
+              onMouseMove={handleSmileyMove}
+              onMouseLeave={handleSmileyLeave}
+              style={{ transform: smileyTransform() }}
+            >
               <SmileIcon />
             </div>
             <p class="empty-text">{EMPTY_TEXT[props.tab]}</p>

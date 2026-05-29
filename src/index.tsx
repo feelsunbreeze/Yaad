@@ -15,4 +15,15 @@ import "@fontsource/dm-sans/500.css";
 
 import App from "./App";
 
+// Prevent devtools shortcuts in production
+document.addEventListener("keydown", (e) => {
+  if (
+    e.key === "F12" ||
+    (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "i") ||
+    (e.metaKey && e.altKey && e.key.toLowerCase() === "i")
+  ) {
+    e.preventDefault();
+  }
+});
+
 render(() => <App />, document.getElementById("root") as HTMLElement);

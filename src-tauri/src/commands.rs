@@ -356,8 +356,11 @@ pub(crate) fn ensure_permission(app: &AppHandle) -> Result<bool, String> {
 // ── list_completed (archive) ─────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn list_completed(state: State<'_, AppState>) -> Result<Vec<ReminderView>, String> {
+pub fn list_completed(state: State<'_, AppState>, limit: Option<u32>, offset: Option<u32>) -> Result<Vec<ReminderView>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    let lim = limit.unwrap_or(10);
+    let off = offset.unwrap_or(0);
 
     // For completed reminders, surface BOTH the original fire_at (last
     // pending occurrence) and the completed_at separately. Previously the
@@ -375,10 +378,10 @@ pub fn list_completed(state: State<'_, AppState>) -> Result<Vec<ReminderView>, S
          FROM reminders r
          WHERE r.status = 'completed'
          ORDER BY r.completed_at DESC
-         LIMIT 200",
+         LIMIT ?1 OFFSET ?2",
     ).map_err(|e| e.to_string())?;
 
-    let rows = stmt.query_map([], |row| {
+    let rows = stmt.query_map(rusqlite::params![lim, off], |row| {
         Ok(ReminderView {
             id:           row.get(0)?,
             title:        row.get(1)?,
@@ -392,6 +395,16 @@ pub fn list_completed(state: State<'_, AppState>) -> Result<Vec<ReminderView>, S
     }).map_err(|e| e.to_string())?;
 
     Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+#[tauri::command]
+pub fn count_completed(state: State<'_, AppState>) -> Result<u32, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.query_row(
+        "SELECT COUNT(*) FROM reminders WHERE status = 'completed'",
+        [],
+        |row| row.get(0)
+    ).map_err(|e| e.to_string())
 }
 
 // ── tz helper ────────────────────────────────────────────────────────────────

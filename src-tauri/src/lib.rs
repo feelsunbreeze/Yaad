@@ -51,6 +51,7 @@ pub fn run() {
             commands::snooze,
             commands::test_notification,
             commands::list_completed,
+            commands::count_completed,
             commands::get_settings,
             commands::set_settings,
             commands::factory_reset,

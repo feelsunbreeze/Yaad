@@ -1,7 +1,7 @@
-use rusqlite::Connection;
 use honker::Database;
-use std::sync::Mutex;
+use rusqlite::Connection;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 pub struct AppState {
     pub db: Mutex<Connection>,
@@ -87,10 +87,7 @@ pub fn init_db(app_dir: PathBuf) -> Result<AppState, Box<dyn std::error::Error>>
     // SQLite's `ALTER TABLE ADD COLUMN` doesn't support IF NOT EXISTS, so
     // we just try and ignore the "duplicate column name" error. Each
     // migration block is safe to run on any DB version.
-    let _ = conn.execute(
-        "ALTER TABLE occurrences ADD COLUMN human_time TEXT",
-        [],
-    );
+    let _ = conn.execute("ALTER TABLE occurrences ADD COLUMN human_time TEXT", []);
 
     Ok(AppState {
         db: Mutex::new(conn),

@@ -1,9 +1,9 @@
-import { createSignal, createMemo, onMount, onCleanup } from "solid-js";
+import { createSignal, createMemo, onMount, onCleanup, batch } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
+import { playSfx, playRandomNotify } from "@/lib/audio";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { Reminder, Tab, QuickTag, SnoozePreset } from "@/lib/types";
-import { showToast } from "@/lib/toast";
+import type { Reminder, Tab, SnoozePreset } from "@/lib/types";
 
 /**
  * Wire shape returned by `list_reminders` / `list_completed`. Matches the
@@ -84,6 +84,11 @@ export function useReminders() {
   const [reminders, setReminders] = createStore<Reminder[]>([]);
   const [tab, setTab] = createSignal<Tab>("today");
   const [error, setError] = createSignal<string | null>(null);
+  const [shakingTaskId, setShakingTaskId] = createSignal<string | null>(null);
+  const [completedOffset, setCompletedOffset] = createSignal(0);
+  const [hasMoreCompleted, setHasMoreCompleted] = createSignal(true);
+  const [backendDoneCount, setBackendDoneCount] = createSignal(0);
+  let isLoadingMore = false;
 
   // ── Derived ─────────────────────────────────────────────────────────────
 
@@ -94,8 +99,16 @@ export function useReminders() {
     return reminders.filter(r => !r.done && r.bucket === "upcoming");
   });
 
-  const total = createMemo(() => reminders.length);
-  const done = createMemo(() => reminders.filter(r => r.done).length);
+  const done = createMemo(() => {
+    const optimistic = reminders.filter(r => r.done && r.completedAt === null).length;
+    return backendDoneCount() + optimistic;
+  });
+
+  const total = createMemo(() => {
+    const active = reminders.filter(r => !r.done).length;
+    return active + done();
+  });
+
   const percent = createMemo(() =>
     total() === 0 ? 0 : Math.round((done() / total()) * 100)
   );
@@ -104,16 +117,46 @@ export function useReminders() {
 
   async function loadReminders(): Promise<void> {
     try {
-      const [active, completed] = await Promise.all([
+      const currentCompletedCount = Math.max(10, completedOffset() + 10);
+      
+      const [active, completed, doneCount] = await Promise.all([
         invoke<BackendReminder[]>("list_reminders"),
-        invoke<BackendReminder[]>("list_completed"),
+        invoke<BackendReminder[]>("list_completed", { limit: currentCompletedCount, offset: 0 }),
+        invoke<number>("count_completed"),
       ]);
       const now = Date.now();
+      
+      setHasMoreCompleted(completed.length >= currentCompletedCount);
+      setBackendDoneCount(doneCount);
+      
       setReminders(reconcile([...active, ...completed].map(b => mapBackend(b, now))));
       setError(null);
     } catch (e) {
       console.error("loadReminders failed:", e);
       setError(`couldn't load reminders: ${stringify(e)}`);
+    }
+  }
+
+  async function loadMoreCompleted(): Promise<void> {
+    if (!hasMoreCompleted() || isLoadingMore) return;
+    isLoadingMore = true;
+    const newOffset = completedOffset() + 10;
+    try {
+      const moreCompleted = await invoke<BackendReminder[]>("list_completed", { limit: 10, offset: newOffset });
+      if (moreCompleted.length < 10) {
+        setHasMoreCompleted(false);
+      }
+      if (moreCompleted.length > 0) {
+        const now = Date.now();
+        const mapped = moreCompleted.map(b => mapBackend(b, now));
+        // We append to the store's array directly.
+        setReminders(prev => [...prev, ...mapped]);
+        setCompletedOffset(newOffset);
+      }
+    } catch (e) {
+      console.error("loadMoreCompleted failed:", e);
+    } finally {
+      isLoadingMore = false;
     }
   }
 
@@ -124,7 +167,6 @@ export function useReminders() {
     // a done card is a deliberate no-op until the Rust side grows one.
     if (r.done) return;
 
-    const bucket = r.bucket;
 
     // Optimistic flip — the check fills immediately, then reconcile with
     // backend truth on refresh.
@@ -145,8 +187,26 @@ export function useReminders() {
     if (!title) return;
 
     try {
+      const beforeIds = new Set(reminders.map(r => r.id));
       await invoke("capture_submit", { raw: title });
       await loadReminders();
+      
+      const newTasks = reminders.filter(r => !beforeIds.has(r.id));
+      if (newTasks.length > 0) {
+        const newTask = newTasks[0];
+        
+        // If it landed in a different time-based tab, smoothly auto-switch
+        if (newTask.bucket !== tab()) {
+          batch(() => {
+            setShakingTaskId(newTask.id);
+            setTab(newTask.bucket);
+          });
+          
+          setTimeout(() => setShakingTaskId(null), 850);
+        }
+      }
+      playSfx("addTask");
+      setError(null);
     } catch (e) {
       console.error("capture_submit failed:", e);
       setError(`couldn't add reminder: ${stringify(e)}`);
@@ -156,6 +216,7 @@ export function useReminders() {
   async function snoozeReminder(id: string, preset: SnoozePreset): Promise<void> {
     try {
       await invoke("snooze", { id, preset });
+      playSfx("snooze");
       await loadReminders();
     } catch (e) {
       console.error("snooze failed:", e);
@@ -195,7 +256,20 @@ export function useReminders() {
 
     void (async () => {
       await loadReminders();
-      unfire = await listen("reminder:fired", () => { void loadReminders(); });
+      unfire = await listen("reminder:fired", async (e: { payload: { reminder_id: string } }) => {
+        const reminder = reminders.find(r => r.id === e.payload.reminder_id);
+        
+        // If the reminder's fireAt is in the past or exactly now, it's strictly "due now"
+        const isDueNow = reminder && reminder.fireAt && reminder.fireAt <= Date.now();
+        
+        if (isDueNow) {
+          playSfx("dueNow");
+        } else {
+          playRandomNotify();
+        }
+        
+        await loadReminders();
+      });
       unsnooze = await listen("reminder:snoozed_quiet", () => { void loadReminders(); });
     })();
 
@@ -226,6 +300,9 @@ export function useReminders() {
     addReminder,
     snoozeReminder,
     loadReminders,
+    shakingTaskId,
+    hasMoreCompleted,
+    loadMoreCompleted,
   };
 }
 

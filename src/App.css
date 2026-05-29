@@ -98,7 +98,7 @@ body::before {
 
 .header-top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
 }
 
@@ -139,8 +139,8 @@ body::before {
 }
 
 .icon-btn {
-  width: 38px;
-  height: 38px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background: var(--cream-2);
   border: 1.5px solid var(--cream-3);
@@ -166,8 +166,8 @@ body::before {
 }
 
 .icon-btn svg {
-  width: 17px;
-  height: 17px;
+  width: 15px;
+  height: 15px;
   stroke: var(--text-mute);
   fill: none;
   stroke-width: 1.7;
@@ -481,7 +481,7 @@ body::before {
 }
 
 .list-content.fade-out .section-header {
-  animation: fade-out-up 0.6s var(--ease-smooth) forwards;
+  animation: fade-out-up 0.6s var(--ease-smooth) forwards !important;
 }
 
 @keyframes fade-out-up {
@@ -498,6 +498,11 @@ body::before {
 
 .list-content.fade-out .list-bottom-spacer {
   display: none;
+}
+
+.list-content.fast-switch .section-header,
+.list-content.fast-switch .reminder-card {
+  animation: rise 0.3s var(--ease-decel) forwards;
 }
 
 /* ── REMINDER CARD ──────────────────────────────────────── */
@@ -526,6 +531,14 @@ body::before {
     opacity 0.8s var(--ease-decel);
   position: relative;
   overflow: visible;
+}
+
+.reminder-card:focus-visible {
+  outline: none;
+  background: var(--cream-3);
+  border-color: var(--amber);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(92, 64, 34, 0.15);
 }
 
 .list-content.sorting-active .reminder-card {
@@ -558,6 +571,21 @@ body::before {
   transform: translateY(0px) scale(0.985);
 }
 
+/* During auto-switch: fade the whole list container in gently — no per-card rise */
+.list-content.auto-switch {
+  animation: auto-switch-fade-in 0.7s var(--ease-smooth) forwards;
+}
+
+.reminder-card.no-rise:not(.completing) {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+@keyframes auto-switch-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 .reminder-card.done {
   opacity: 0.48;
 }
@@ -862,6 +890,8 @@ body::before {
   align-items: center;
   justify-content: center;
   border: 1.5px solid var(--cream-3);
+  cursor: pointer;
+  transition: transform 0.15s ease-out;
 }
 
 .empty-icon svg {

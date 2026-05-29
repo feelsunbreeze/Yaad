@@ -1,12 +1,15 @@
-import { Show, For, createSignal, createEffect, onCleanup } from "solid-js";
+import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import type { Reminder } from "@/lib/types";
 import { CheckIcon, ClockIcon } from "./icons";
 import { formatResolvedAgo, formatRelativeLive } from "@/lib/date";
+import { playSfx } from "@/lib/audio";
 
 export interface ReminderCardProps {
   reminder: Reminder;
   onToggle: (id: string) => void;
   onSnoozeRequest: (id: string) => void;
+  isShaking?: boolean;
+  suppressRise?: boolean;
 }
 
 /**
@@ -63,10 +66,15 @@ export function ReminderCard(props: ReminderCardProps) {
     }
   });
 
+  // Capture suppressRise ON MOUNT so it never changes for this specific card
+  const suppressRiseOnMount = props.suppressRise;
+
   const cardClass = () => {
     const classes = ["reminder-card"];
     if (props.reminder.done) classes.push("done");
     if (isCompleting()) classes.push("completing");
+    if (suppressRiseOnMount) classes.push("no-rise");
+    if (props.isShaking) classes.push("shaking");
     return classes.join(" ");
   };
 
@@ -84,12 +92,12 @@ export function ReminderCard(props: ReminderCardProps) {
       cardRef.style.setProperty("--natural-height", `${cardRef.offsetHeight}px`);
     }
 
+    playSfx("taskComplete");
     setIsCompleting(true);
-    const t = window.setTimeout(
+    window.setTimeout(
       () => props.onToggle(props.reminder.id),
       COMPLETION_DURATION_MS,
     );
-    onCleanup(() => window.clearTimeout(t));
   }
 
 
@@ -109,10 +117,13 @@ export function ReminderCard(props: ReminderCardProps) {
       tabIndex={0}
       aria-pressed={props.reminder.done}
       onClick={onActivate}
+      onFocus={() => playSfx("focusTask")}
       onKeyDown={e => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onActivate();
+        } else if (e.key === "Escape") {
+          e.currentTarget.blur();
         }
       }}
     >

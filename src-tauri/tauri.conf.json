@@ -17,10 +17,11 @@
         "height": 580,
         "minWidth": 380,
         "maxWidth": 380,
-        "minHeight": 400,
+        "minHeight": 580,
+        "maxHeight": 580,
         "decorations": false,
         "transparent": false,
-        "resizable": true
+        "resizable": false
       }
     ],
     "security": {

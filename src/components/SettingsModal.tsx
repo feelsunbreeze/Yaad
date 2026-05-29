@@ -27,6 +27,7 @@ export interface SettingsModalProps {
 export function SettingsModal(props: SettingsModalProps) {
   const [name, setName] = createSignal(props.currentName);
   const [frequency, setFrequency] = createSignal("2");
+  const [quietHours, setQuietHours] = createSignal("false");
   const [isResetConfirmOpen, setIsResetConfirmOpen] = createSignal(false);
 
   // Keep the local name in sync with whatever App.tsx hands us, and pull
@@ -44,6 +45,7 @@ export function SettingsModal(props: SettingsModalProps) {
       if (settings["notification_frequency"]) {
         setFrequency(settings["notification_frequency"]);
       }
+      setQuietHours(settings["quiet_hours_enabled"] === "true" ? "true" : "false");
     } catch (e) {
       console.error("Failed to load settings", e);
     }
@@ -77,6 +79,15 @@ export function SettingsModal(props: SettingsModalProps) {
       props.onTimeFormatChange(fmt);
     } catch (err) {
       console.error("Failed to save time format", err);
+    }
+  }
+
+  async function updateQuietHours(value: string) {
+    setQuietHours(value);
+    try {
+      await invoke("set_settings", { key: "quiet_hours_enabled", value });
+    } catch (err) {
+      console.error("Failed to save quiet hours", err);
     }
   }
 
@@ -162,6 +173,29 @@ export function SettingsModal(props: SettingsModalProps) {
               ? "We'll notify you exactly at the deadline."
               : `We'll notify you ${parseInt(frequency()) - 1} time${parseInt(frequency()) - 1 === 1 ? "" : "s"} randomly before the deadline, and once exactly at the deadline.`}
           </p>
+        </div>
+
+        <div class="settings-section">
+          <label>Quiet Hours</label>
+          <p class="settings-desc">
+            When on, reminders that would fire between midnight and 7 AM are held until 7 AM instead.
+          </p>
+          <div class="segmented-control">
+            <button
+              type="button"
+              class={`segment-option${quietHours() === "false" ? " active" : ""}`}
+              onClick={() => updateQuietHours("false")}
+            >
+              Off
+            </button>
+            <button
+              type="button"
+              class={`segment-option${quietHours() === "true" ? " active" : ""}`}
+              onClick={() => updateQuietHours("true")}
+            >
+              On (12–7 AM)
+            </button>
+          </div>
         </div>
 
         <div class="settings-section">

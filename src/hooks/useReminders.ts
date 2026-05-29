@@ -2,6 +2,7 @@ import { createSignal, createMemo, onMount, onCleanup, batch } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
 import { playSfx, playRandomNotify } from "@/lib/audio";
+import { showToast } from "@/lib/toast";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Reminder, Tab, SnoozePreset } from "@/lib/types";
 
@@ -20,6 +21,15 @@ interface BackendReminder {
   fire_at: number | null;
   human_time: string | null;
   completed_at: number | null;
+}
+
+/** Payload emitted by the Rust worker on every fire. `due` is set by the
+ *  backend at enqueue time: true for the exact-deadline fire, false for a
+ *  pre-deadline nudge. We trust it rather than re-deriving from clocks. */
+interface FiredPayload {
+  reminder_id: string;
+  title: string;
+  due: boolean;
 }
 
 /** Three-hour urgency window, milliseconds. Same threshold the prior UI
@@ -42,11 +52,6 @@ function endOfTodayMs(now: number): number {
  * Derived fields:
  *   - `bucket`  : null / past / before-end-of-day → "today", else → "upcoming"
  *   - `urgent`  : not done AND fires within 3h (or overdue)
- *   - `tag`     : "important" warm pill when urgent — the backend doesn't
- *                 carry tags yet, so we synthesise one to match the
- *                 prototype's example card. To surface user-chosen tags,
- *                 extend `ReminderView` and `capture_submit` and forward
- *                 the value here.
  */
 function mapBackend(b: BackendReminder, now: number): Reminder {
   const done = b.status === "completed";
@@ -74,8 +79,8 @@ function mapBackend(b: BackendReminder, now: number): Reminder {
  *
  *   - initial fetch
  *   - listen("reminder:fired") + listen("reminder:snoozed_quiet") refresh
- *   - 60s "tick" reload while the window is visible
- *   - pauses on document.visibilitychange when hidden
+ *   - on fire: play the right sound (due_now vs random nudge) + in-app toast
+ *   - visibility-aware refresh on resume
  *   - surfaces invoke errors via the `error` signal (App.tsx renders a banner)
  *
  * Returns plain accessors + action callbacks so the components stay dumb.
@@ -118,17 +123,17 @@ export function useReminders() {
   async function loadReminders(): Promise<void> {
     try {
       const currentCompletedCount = Math.max(10, completedOffset() + 10);
-      
+
       const [active, completed, doneCount] = await Promise.all([
         invoke<BackendReminder[]>("list_reminders"),
         invoke<BackendReminder[]>("list_completed", { limit: currentCompletedCount, offset: 0 }),
         invoke<number>("count_completed"),
       ]);
       const now = Date.now();
-      
+
       setHasMoreCompleted(completed.length >= currentCompletedCount);
       setBackendDoneCount(doneCount);
-      
+
       setReminders(reconcile([...active, ...completed].map(b => mapBackend(b, now))));
       setError(null);
     } catch (e) {
@@ -190,18 +195,18 @@ export function useReminders() {
       const beforeIds = new Set(reminders.map(r => r.id));
       await invoke("capture_submit", { raw: title });
       await loadReminders();
-      
+
       const newTasks = reminders.filter(r => !beforeIds.has(r.id));
       if (newTasks.length > 0) {
         const newTask = newTasks[0];
-        
+
         // If it landed in a different time-based tab, smoothly auto-switch
         if (newTask.bucket !== tab()) {
           batch(() => {
             setShakingTaskId(newTask.id);
             setTab(newTask.bucket);
           });
-          
+
           setTimeout(() => setShakingTaskId(null), 850);
         }
       }
@@ -239,8 +244,7 @@ export function useReminders() {
   // Owns:
   //   - first load
   //   - reminder:fired / reminder:snoozed_quiet subscriptions
-  //   - visibility-aware 60s tick (pauses on document.hidden, resumes on
-  //     visibilitychange + fires an immediate reload so the list is fresh)
+  //   - visibility-aware refresh on resume
 
   onMount(() => {
     let unfire: UnlistenFn | undefined;
@@ -256,19 +260,22 @@ export function useReminders() {
 
     void (async () => {
       await loadReminders();
-      unfire = await listen("reminder:fired", async (e: { payload: { reminder_id: string } }) => {
-        const reminder = reminders.find(r => r.id === e.payload.reminder_id);
-        
-        // If the reminder's fireAt is in the past or exactly now, it's strictly "due now"
-        const isDueNow = reminder && reminder.fireAt && reminder.fireAt <= Date.now();
-        
-        if (isDueNow) {
+      unfire = await listen<FiredPayload>("reminder:fired", e => {
+        // `due` is authoritative — set by the backend at enqueue time. The
+        // exact-deadline fire plays due_now; pre-deadline nudges play a random
+        // notify tone. No clock-skew inference.
+        if (e.payload?.due) {
           playSfx("dueNow");
         } else {
           playRandomNotify();
         }
-        
-        await loadReminders();
+
+        // Guaranteed-visible in-app cue — fires even when the OS toast is
+        // suppressed (Windows dev-mode AUMID, denied permission, etc).
+        const title = e.payload?.title?.trim();
+        showToast(title ? `Surfacing: ${title}` : "A reminder is surfacing");
+
+        void loadReminders();
       });
       unsnooze = await listen("reminder:snoozed_quiet", () => { void loadReminders(); });
     })();

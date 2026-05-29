@@ -78,7 +78,7 @@ function mapBackend(b: BackendReminder, now: number): Reminder {
  * Central reminder hook. Owns the entire data lifecycle:
  *
  *   - initial fetch
- *   - listen("reminder:fired") + listen("reminder:snoozed_quiet") refresh
+ *   - listen("reminder:fired") refresh
  *   - on fire: play the right sound (due_now vs random nudge) + in-app toast
  *   - visibility-aware refresh on resume
  *   - surfaces invoke errors via the `error` signal (App.tsx renders a banner)
@@ -243,12 +243,11 @@ export function useReminders() {
   //
   // Owns:
   //   - first load
-  //   - reminder:fired / reminder:snoozed_quiet subscriptions
+  //   - reminder:fired subscription (sound + in-app cue + refresh)
   //   - visibility-aware refresh on resume
 
   onMount(() => {
     let unfire: UnlistenFn | undefined;
-    let unsnooze: UnlistenFn | undefined;
 
     function onVisibility() {
       if (!document.hidden) {
@@ -277,14 +276,12 @@ export function useReminders() {
 
         void loadReminders();
       });
-      unsnooze = await listen("reminder:snoozed_quiet", () => { void loadReminders(); });
     })();
 
     document.addEventListener("visibilitychange", onVisibility);
 
     onCleanup(() => {
       unfire?.();
-      unsnooze?.();
       document.removeEventListener("visibilitychange", onVisibility);
     });
   });

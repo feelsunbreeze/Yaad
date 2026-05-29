@@ -10,23 +10,19 @@
 //!      deadline (scheduled up-front in commands.rs), plus one exact-deadline
 //!      "due" notification. Count is the user's notification_frequency setting.
 //!   2. Pattern-interrupt message framing — not "REMINDER:", feels human.
-//!   3. Quiet hours (00:00–07:00 local) are OPT-IN via the
-//!      `quiet_hours_enabled` setting and OFF by default. When enabled, an
-//!      overnight notification is re-queued for 07:00 rather than dropped.
 //!
 //! Architecture:
 //!   - Main loop: claim job → spawn detached thread → continue claiming.
 //!     Keeps any per-job work off the worker thread so simultaneous reminders
 //!     don't serialise behind each other.
-//!   - Per-job thread: quiet-hours guard → pre-fire DB check (skip if the
-//!     occurrence was completed/snoozed since enqueue) → OS notification →
-//!     ack → emit `reminder:fired` so the UI plays its sound + in-app cue.
+//!   - Per-job thread: pre-fire DB check (skip if the occurrence was
+//!     completed/snoozed since enqueue) → OS notification → ack → emit
+//!     `reminder:fired` so the UI plays its sound + in-app cue.
 
-use honker::{Database, QueueOpts, EnqueueOpts, Job};
+use honker::{Database, QueueOpts, Job};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::{NotificationExt, PermissionState};
 use std::time::Duration;
-use chrono::{Local, NaiveTime, TimeZone, Timelike};
 use serde_json::{json, Value};
 
 use crate::db::AppState;
@@ -42,10 +38,6 @@ const FRAMINGS: &[&str] = &[
     "", // bare title, sometimes most effective
 ];
 
-/// Quiet-hours window end: when quiet hours are ENABLED, notifications that
-/// would fire between 00:00 and this hour are re-queued for this hour.
-const QUIET_HOURS_END: u32 = 7;
-
 pub fn start_worker(app: AppHandle, db: Database) {
     std::thread::spawn(move || {
         let q = db.queue("due_reminders", QueueOpts::default());
@@ -53,10 +45,13 @@ pub fn start_worker(app: AppHandle, db: Database) {
         loop {
             match q.claim_one("notifier-1") {
                 Ok(Some(job)) => {
+                    // Detach onto its own thread so the worker can immediately
+                    // claim the next due job. process_job reaches the DB through
+                    // the managed AppState (via AppHandle), so it needs no
+                    // honker handle of its own.
                     let app_thread = app.clone();
-                    let db_thread = db.clone();
                     std::thread::spawn(move || {
-                        process_job(app_thread, db_thread, job);
+                        process_job(app_thread, job);
                     });
                 }
                 Ok(None) => {
@@ -76,7 +71,7 @@ pub fn start_worker(app: AppHandle, db: Database) {
 /// `job.ack()` is intentionally called late (after fire) so that if the
 /// process is killed mid-execution honker re-claims the job after its
 /// visibility timeout.
-fn process_job(app: AppHandle, db: Database, job: Job) {
+fn process_job(app: AppHandle, job: Job) {
     let payload: Value = serde_json::from_slice(&job.payload).unwrap_or_default();
 
     let title = payload
@@ -104,21 +99,6 @@ fn process_job(app: AppHandle, db: Database, job: Job) {
     // choose the due_now sound vs a random notify tone — no fragile clock-skew
     // inference on the frontend.
     let due = payload.get("due").and_then(|v| v.as_bool()).unwrap_or(true);
-
-    // ── Quiet hours (opt-in) ──────────────────────────────────────────────
-    // Default OFF. Previously this branch ran unconditionally and silently
-    // deferred EVERY overnight notification to 07:00 — which, for a night-owl
-    // user testing at 2am, looked exactly like "notifications are broken."
-    if quiet_hours_enabled(&app) && Local::now().hour() < QUIET_HOURS_END {
-        let resume_at = next_local_time_at(QUIET_HOURS_END, 0);
-        let q = db.queue("due_reminders", QueueOpts::default());
-        let mut opts = EnqueueOpts::default();
-        opts.run_at = Some(resume_at);
-        let _ = q.enqueue(&payload, opts);
-        let _ = job.ack();
-        let _ = app.emit("reminder:snoozed_quiet", &reminder_id);
-        return;
-    }
 
     // ── Pre-fire DB check ─────────────────────────────────────────────────
     // Between enqueue and now the user may have completed or snoozed this
@@ -174,19 +154,6 @@ fn process_job(app: AppHandle, db: Database, job: Job) {
         "reminder:fired",
         json!({ "reminder_id": reminder_id, "title": title, "due": due }),
     );
-}
-
-/// Read the `quiet_hours_enabled` setting. Absent or unparseable → false.
-fn quiet_hours_enabled(app: &AppHandle) -> bool {
-    let state = app.state::<AppState>();
-    let Ok(db) = state.db.lock() else { return false };
-    db.query_row(
-        "SELECT value FROM settings WHERE key = 'quiet_hours_enabled'",
-        [],
-        |r| r.get::<_, String>(0),
-    )
-    .map(|v| v == "true" || v == "1")
-    .unwrap_or(false)
 }
 
 /// Query the DB: is the reminder still active AND is the targeted occurrence
@@ -246,22 +213,4 @@ fn log_fire(app: &AppHandle, reminder_id: &str, occurrence_id: &str, success: bo
         ],
     ).map_err(|e| e.to_string())?;
     Ok(())
-}
-
-/// Next local timestamp at (hour, minute); tomorrow's if already past today.
-/// Falls back to "1 hour from now" on a DST gap.
-fn next_local_time_at(hour: u32, minute: u32) -> i64 {
-    let now = Local::now();
-    let time = NaiveTime::from_hms_opt(hour, minute, 0).expect("hh:mm in range");
-    let candidate_naive = now.date_naive().and_time(time);
-    let candidate = match Local.from_local_datetime(&candidate_naive) {
-        chrono::LocalResult::Single(dt) => dt,
-        chrono::LocalResult::Ambiguous(dt, _) => dt,
-        chrono::LocalResult::None => return now.timestamp() + 3600,
-    };
-    if candidate <= now {
-        (candidate + chrono::Duration::days(1)).timestamp()
-    } else {
-        candidate.timestamp()
-    }
 }

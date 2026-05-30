@@ -1,7 +1,7 @@
 import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import type { Reminder } from "@/lib/types";
 import { CheckIcon, ClockIcon, RescheduleIcon } from "./icons";
-import { formatResolvedAgo, formatRelativeLive } from "@/lib/date";
+import { formatResolvedAgo, formatRelativeLive, formatExactDate } from "@/lib/date";
 import { playSfx } from "@/lib/audio";
 
 export interface ReminderCardProps {
@@ -109,7 +109,7 @@ export function ReminderCard(props: ReminderCardProps) {
               {/* On a same-tab reschedule the parent adds `.rescheduled`, and
                   `.reminder-card.rescheduled .meta-time` plays the swap-in
                   animation while this value updates reactively. */}
-              <span class="meta-time">
+              <span class="meta-time" data-tooltip={props.reminder.fireAt ? formatExactDate(props.reminder.fireAt) : undefined}>
                 <ClockIcon />
                 {props.reminder.fireAt
                   ? formatRelativeLive(props.reminder.fireAt, now())

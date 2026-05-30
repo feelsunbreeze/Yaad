@@ -2652,4 +2652,60 @@ body::before {
   .ob-step.leaving {
     animation: none !important;
   }
+
+/* ── CUSTOM TOOLTIP FOR EXACT TIME ─────────────────────── */
+.meta-time[data-tooltip] {
+  position: relative;
+  cursor: help;
 }
+
+.meta-time[data-tooltip]::before {
+  content: "";
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-bottom-color: var(--brown);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s var(--ease-decel), visibility 0.3s;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.meta-time[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: var(--brown);
+  color: var(--cream);
+  padding: 5px 9px;
+  border-radius: 6px;
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.3s var(--ease-decel),
+    transform 0.3s var(--ease-decel),
+    visibility 0.3s;
+  z-index: 100;
+  box-shadow: 0 4px 14px rgba(92, 64, 34, 0.2);
+}
+
+.meta-time[data-tooltip]:hover::before {
+  opacity: 1;
+  visibility: visible;
+}
+
+.meta-time[data-tooltip]:hover::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}}

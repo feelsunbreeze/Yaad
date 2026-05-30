@@ -145,3 +145,22 @@ export function describeTime(ms: number, nowMs: number = Date.now()): string {
     ? `on ${base} at ${clock}`
     : `on ${base}, ${d.getFullYear()} at ${clock}`;
 }
+
+/**
+ * "sep 24th, 2026 at 4:30 pm"
+ * Exact absolute date and time for tooltips.
+ */
+export function formatExactDate(ms: number): string {
+  const d = new Date(ms);
+  const month = MONTHS_SHORT[d.getMonth()].toLowerCase();
+  
+  const date = d.getDate();
+  const suffix = date % 10 === 1 && date !== 11 ? "st" :
+                 date % 10 === 2 && date !== 12 ? "nd" :
+                 date % 10 === 3 && date !== 13 ? "rd" : "th";
+  
+  const year = d.getFullYear();
+  const clock = formatClock(d).toLowerCase();
+
+  return `${month} ${date}${suffix}, ${year} at ${clock}`;
+}

@@ -125,11 +125,15 @@ fn process_job(app: AppHandle, job: Job) {
     }
 
     // ── Build message body ────────────────────────────────────────────────
-    let prefix = FRAMINGS[attempt as usize % FRAMINGS.len()];
-    let body = if prefix.is_empty() {
-        title.clone()
+    let body = if due {
+        format!("it's time — {title}")
     } else {
-        format!("{prefix} {title}")
+        let prefix = FRAMINGS[attempt as usize % FRAMINGS.len()];
+        if prefix.is_empty() {
+            title.clone()
+        } else {
+            format!("{prefix} {title}")
+        }
     };
 
     // ── Fire OS notification ──────────────────────────────────────────────

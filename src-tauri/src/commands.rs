@@ -95,9 +95,9 @@ fn do_reschedule(
         rusqlite::params![occ_id, id, fire_at_ms, human],
     ).map_err(|e| e.to_string())?;
 
-    // Re-activate the reminder (covers rescheduling a completed task).
+    // Re-activate the reminder (covers rescheduling a completed task) and reset count.
     tx.execute(
-        "UPDATE reminders SET status='active', updated_at=?1, completed_at=NULL WHERE id=?2",
+        "UPDATE reminders SET status='active', updated_at=?1, completed_at=NULL, notified_count=0 WHERE id=?2",
         rusqlite::params![db_now, id],
     ).map_err(|e| e.to_string())?;
 

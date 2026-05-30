@@ -103,3 +103,45 @@ export function formatTimeLive(d: Date = new Date(), format: string = "12h"): st
     return `${hrs}:${mins}:${secs} ${ampm}`;
   }
 }
+
+const WEEKDAYS_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** "3:45 PM" / "3 PM" — 12-hour clock, drops ":00". */
+export function formatClock(d: Date): string {
+  let h = d.getHours();
+  const m = d.getMinutes();
+  const suf = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  h = h ? h : 12;
+  return m === 0 ? `${h} ${suf}` : `${h}:${String(m).padStart(2, "0")} ${suf}`;
+}
+
+/**
+ * A friendly absolute label for a fire time, in the same register the Rust
+ * parser produces ("today at 3 PM", "tomorrow at 9 AM", "Friday at 5 PM",
+ * "on Oct 25 at 9 AM"). Used by the reschedule modal's ± delta chips so the
+ * preview reads naturally rather than as a raw timestamp.
+ */
+export function describeTime(ms: number, nowMs: number = Date.now()): string {
+  const d = new Date(ms);
+  const now = new Date(nowMs);
+  const clock = formatClock(d);
+
+  const startOfDay = (x: Date) => {
+    const c = new Date(x);
+    c.setHours(0, 0, 0, 0);
+    return c.getTime();
+  };
+  const dayDiff = Math.round((startOfDay(d) - startOfDay(now)) / 86_400_000);
+
+  if (dayDiff <= 0) return `today at ${clock}`;
+  if (dayDiff === 1) return `tomorrow at ${clock}`;
+  if (dayDiff < 7) return `${WEEKDAYS_LONG[d.getDay()]} at ${clock}`;
+
+  const sameYear = d.getFullYear() === now.getFullYear();
+  const base = `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`;
+  return sameYear
+    ? `on ${base} at ${clock}`
+    : `on ${base}, ${d.getFullYear()} at ${clock}`;
+}

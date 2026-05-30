@@ -530,7 +530,9 @@ body::before {
     border-width 0.85s var(--ease-decel),
     opacity 0.8s var(--ease-decel);
   position: relative;
-  overflow: visible;
+  /* hidden (not visible) so a long title can never paint past the 14px
+     rounded corners — the card always keeps its squircle silhouette. */
+  overflow: hidden;
 }
 
 .reminder-card:focus-visible {
@@ -608,9 +610,18 @@ body::before {
   font-weight: 500;
   color: var(--text-main);
   line-height: 1.35;
-  white-space: nowrap;
+  /* Long-text handling: wrap, then clamp to 2 lines with an ellipsis, and
+     break even an unbroken string so the card can never be forced wider than
+     its column (which is what used to square off the rounded corners). */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .reminder-card.snooze-open {
@@ -872,9 +883,15 @@ body::before {
   color: var(--text-main);
   line-height: 1.3;
   transition: color 0.22s var(--ease-snap);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .reminder-meta {
@@ -1313,58 +1330,62 @@ body::before {
 }
 
 /* ── RESCHEDULE PENCIL BUTTON ─────────────────────────── */
+/* Edit (reschedule) affordance — a tiny squircle, ALWAYS visible so it's
+   discoverable at rest, sized to match the sort icon. On hover the squircle
+   warms to amber and the pencil does a quick springy scribble-wiggle — it
+   exudes a little joy, like it's itching to write. */
 .reschedule-btn {
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: none;
-  border-radius: 8px;
-  background: transparent;
+  border-radius: 7px; /* squircle */
+  background: var(--cream-2);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: var(--warm-mid);
-  opacity: 0;
-  transition:
-    opacity 0.2s var(--ease-snap),
-    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
-    background 0.2s var(--ease-snap),
-    color 0.2s var(--ease-snap);
-}
-
-.reminder-card:hover .reschedule-btn,
-.reminder-card:focus-visible .reschedule-btn {
+  color: var(--text-soft);
   opacity: 1;
+  transition:
+    transform 0.3s var(--ease-spring),
+    background 0.22s var(--ease-snap),
+    color 0.22s var(--ease-snap),
+    box-shadow 0.22s var(--ease-snap);
 }
 
 .reschedule-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.8;
+  stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .reschedule-btn:hover {
-  background: var(--cream-2);
-  color: var(--amber);
+  background: var(--amber);
+  color: var(--cream);
+  transform: scale(1.12);
+  box-shadow: 0 3px 10px -2px rgba(184, 146, 74, 0.55);
 }
 
 .reschedule-btn:hover svg {
-  transform: rotate(15deg);
+  animation: pencil-scribble 0.55s var(--ease-spring);
 }
 
 .reschedule-btn:active {
-  transform: scale(0.82);
+  transform: scale(0.88);
 }
 
-.reschedule-btn:active svg {
-  transform: rotate(15deg) scale(0.9);
+@keyframes pencil-scribble {
+  0%   { transform: rotate(0deg) scale(1); }
+  25%  { transform: rotate(-18deg) scale(1.12); }
+  50%  { transform: rotate(12deg) scale(1.06); }
+  75%  { transform: rotate(-6deg) scale(1.03); }
+  100% { transform: rotate(0deg) scale(1); }
 }
 
 .snooze-popover {
@@ -1519,6 +1540,11 @@ body::before {
   padding: 1.5rem;
   box-shadow: 0 12px 40px rgba(92, 64, 34, 0.14);
   animation: modal-in 280ms var(--ease-spring) both;
+  /* Never taller than the window — if content ever exceeds it, scroll inside
+     the sheet instead of overflowing the frame. */
+  max-height: calc(100vh - 4.5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 @keyframes modal-in {
@@ -1914,7 +1940,12 @@ body::before {
   font-size: 0.8rem;
   font-weight: 500;
   box-shadow: 0 8px 24px -6px rgba(92, 64, 34, 0.25);
-  animation: toast-sequence 2s var(--ease-spring) forwards;
+  /* Graceful two-phase life: a springy rise-in, a calm hold, then a soft
+     fade-down-out. Split into two animations so each phase gets its own
+     easing (spring in, accelerate out) rather than one compromised curve. */
+  animation:
+    toast-in 0.5s var(--ease-spring) both,
+    toast-out 0.55s var(--ease-accel) 2.85s both;
   pointer-events: none;
 }
 
@@ -1936,31 +1967,15 @@ body::before {
   stroke-linejoin: round;
 }
 
-@keyframes toast-sequence {
-  0% {
-    transform: translate(-50%, 25px) scale(0.9);
-    opacity: 0;
-  }
+@keyframes toast-in {
+  0%   { transform: translate(-50%, 26px) scale(0.92); opacity: 0; }
+  60%  { transform: translate(-50%, -3px) scale(1.015); opacity: 1; }
+  100% { transform: translate(-50%, 0) scale(1); opacity: 1; }
+}
 
-  10% {
-    transform: translate(-50%, -4px) scale(1.02);
-    opacity: 1;
-  }
-
-  15% {
-    transform: translate(-50%, 0) scale(1);
-    opacity: 1;
-  }
-
-  85% {
-    transform: translate(-50%, 0) scale(1);
-    opacity: 1;
-  }
-
-  100% {
-    transform: translate(-50%, 15px) scale(0.9);
-    opacity: 0;
-  }
+@keyframes toast-out {
+  0%   { transform: translate(-50%, 0) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, 12px) scale(0.94); opacity: 0; }
 }
 
 /* ── SEGMENTED CONTROL ─────────────────────────────────── */
@@ -2221,4 +2236,122 @@ body::before {
   text-overflow: ellipsis;
   max-width: 100%;
   display: block;
+}
+/* ── RESCHEDULE MODAL: ± DELTA CHIPS ───────────────────── */
+.reschedule-adjust {
+  margin-top: 1rem;
+}
+
+.reschedule-label {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-mute);
+  margin-bottom: 0.45rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.delta-row {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.delta-chip {
+  flex: 1 1 auto;
+  min-width: 3rem;
+  padding: 0.45rem 0.3rem;
+  border-radius: 10px;
+  border: 1.5px solid var(--cream-3);
+  background: var(--cream-2);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-mute);
+  cursor: pointer;
+  transition:
+    background 0.18s var(--ease-snap),
+    border-color 0.18s var(--ease-snap),
+    color 0.18s var(--ease-snap),
+    transform 0.2s var(--ease-spring);
+}
+
+.delta-chip:active {
+  transform: scale(0.93);
+}
+
+/* subtract = sooner → a cool, urgent red shade */
+.delta-chip.minus {
+  color: var(--red-deep);
+  border-color: rgba(201, 107, 90, 0.22);
+  background: rgba(201, 107, 90, 0.06);
+}
+
+.delta-chip.minus:hover {
+  background: rgba(201, 107, 90, 0.16);
+  border-color: var(--red-soft);
+  transform: translateY(-1px) scale(1.04);
+}
+
+/* add = later → a calm, easeful green shade */
+.delta-chip.plus {
+  color: #3f7a55;
+  border-color: rgba(116, 193, 137, 0.30);
+  background: rgba(116, 193, 137, 0.10);
+}
+
+.delta-chip.plus:hover {
+  background: rgba(116, 193, 137, 0.22);
+  border-color: var(--green-soft);
+  transform: translateY(-1px) scale(1.04);
+}
+
+/* Onboarding step-2 preference labels (compact) */
+.onboarding-pref-label {
+  display: block;
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-mute);
+  margin: 0 0 0.4rem 0.15rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── SAME-TAB RESCHEDULE: in-place time swap ────────────── */
+/* When an edit keeps a card in the same tab we DON'T slide it away. Instead
+   the card gives a soft amber acknowledgement and its time label does a
+   sophisticated swap — old value lifts out, new value settles in with a brief
+   amber glow — so the change is felt without any disruptive motion. */
+.reminder-card.rescheduled {
+  animation: card-reschedule-glow 0.9s var(--ease-smooth);
+}
+
+@keyframes card-reschedule-glow {
+  0%, 100% { background: rgba(255, 252, 245, 0.85); }
+  40%      { background: rgba(184, 146, 74, 0.13); }
+}
+
+.reminder-card.rescheduled .meta-time {
+  animation: meta-reschedule 0.85s var(--ease-spring);
+}
+
+@keyframes meta-reschedule {
+  0%   { opacity: 1; transform: translateY(0); color: var(--text-soft); }
+  32%  { opacity: 0; transform: translateY(-7px); }
+  33%  { opacity: 0; transform: translateY(7px); }
+  70%  { opacity: 1; transform: translateY(0); color: var(--amber); }
+  100% { opacity: 1; transform: translateY(0); color: var(--text-soft); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reschedule-btn:hover svg,
+  .reminder-card.rescheduled,
+  .reminder-card.rescheduled .meta-time {
+    animation: none !important;
+  }
 }

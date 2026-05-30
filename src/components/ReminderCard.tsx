@@ -11,46 +11,19 @@ export interface ReminderCardProps {
   isShaking?: boolean;
   suppressRise?: boolean;
   snoozeDeparting?: "left" | "right";
+  /** True briefly after a SAME-TAB reschedule — the card stays in place and
+   *  its time label animates the change instead of sliding away. */
+  justRescheduled?: boolean;
 }
 
 /**
- * Total length (ms) of the completion sequence, including the isolated
- * layout-collapse tail. Must stay in lockstep with the two
- * `.reminder-card.completing` animations in App.css:
- *
- *   card-fade     (1250ms) — visual ceremony, NO height change
- *   card-collapse ( 250ms)  — layout collapse, siblings slide up
- *
- *   Total: 1500ms
- *
- * `props.onToggle()` is called at the end of this window so the card stays
- * mounted for the full ceremony before the hook's optimistic flip removes
- * it from the visible list.
+ * Total length (ms) of the completion sequence. Must stay in lockstep with the
+ * `.reminder-card.completing` animations in App.css (card-fade + card-collapse).
+ * `props.onToggle()` is called at the end so the card stays mounted for the
+ * full ceremony before the hook's optimistic flip removes it.
  */
 const COMPLETION_DURATION_MS = 1750;
 
-/**
- * A single reminder row. The visual is unchanged from the prototype —
- * check circle, body, snooze affordance — but the toggle interaction is a
- * sequenced ceremony rather than a snap:
- *
- *   1. Check strokes in from the left tip, sweeps through the apex,
- *      arrives at the right tail (~500ms). The check circle blooms in an
- *      over-shoot scale, like ink setting.
- *   2. Card background washes from cream to a muted-green success tone,
- *      border + soft green glow growing in. (~300ms)
- *   3. A brief hold while the eye registers the completion. (~300ms)
- *   4. Card opacity fades to 0, still at full height. (~200ms)
- *   5. CSS `card-collapse` animation kicks in: max-height + padding +
- *      margin + border-width all → 0 over 250ms. Siblings slide up smoothly
- *      to fill the gap. THIS is the only stage where neighbours move.
- *
- * Splitting the visual fade (steps 1-4) from the layout collapse (step 5)
- * is what makes the multi-task case feel deliberate — other cards no
- * longer flicker or shift while the ceremony is in flight. They wait
- * their turn, then slide up as a clean follow-through after the
- * completing card is fully invisible.
- */
 export function ReminderCard(props: ReminderCardProps) {
   const [isCompleting, setIsCompleting] = createSignal(false);
   const [now, setNow] = createSignal(Date.now());
@@ -58,8 +31,7 @@ export function ReminderCard(props: ReminderCardProps) {
   let cardRef: HTMLDivElement | undefined;
 
   // Live countdown — refresh `now` once a second while there's a fire_at to
-  // count toward. The interval clears itself when the reminder is marked
-  // done (no more countdown to render).
+  // count toward.
   createEffect(() => {
     if (props.reminder.fireAt && !props.reminder.done) {
       const t = window.setInterval(() => setNow(Date.now()), 1000);
@@ -67,7 +39,7 @@ export function ReminderCard(props: ReminderCardProps) {
     }
   });
 
-  // Capture suppressRise ON MOUNT so it never changes for this specific card
+  // Capture suppressRise ON MOUNT so it never changes for this specific card.
   const suppressRiseOnMount = props.suppressRise;
 
   const cardClass = () => {
@@ -77,19 +49,16 @@ export function ReminderCard(props: ReminderCardProps) {
     if (suppressRiseOnMount) classes.push("no-rise");
     if (props.isShaking) classes.push("shaking");
     if (props.snoozeDeparting) classes.push(`snooze-depart-${props.snoozeDeparting}`);
+    if (props.justRescheduled) classes.push("rescheduled");
     return classes.join(" ");
   };
 
   function onActivate() {
-    // Don't toggle when:
-    //   - already done (backend has no reopen)
-    //   - animation already in flight (double-click guard)
     if (props.reminder.done) return;
     if (isCompleting()) return;
 
-    // Pin the natural height as a CSS variable so the collapse keyframe
-    // animates from "this card's actual height" to 0, rather than from a
-    // magic-number max-height that may clip long titles.
+    // Pin the natural height so the collapse keyframe animates from this card's
+    // actual height to 0, regardless of how tall the (clamped) title is.
     if (cardRef) {
       cardRef.style.setProperty("--natural-height", `${cardRef.offsetHeight}px`);
     }
@@ -101,8 +70,6 @@ export function ReminderCard(props: ReminderCardProps) {
       COMPLETION_DURATION_MS,
     );
   }
-
-
 
   const showMeta = () =>
     !props.reminder.done &&
@@ -139,6 +106,9 @@ export function ReminderCard(props: ReminderCardProps) {
         <Show when={showMeta()}>
           <div class="reminder-meta">
             <Show when={props.reminder.fireAt || props.reminder.timeLabel}>
+              {/* On a same-tab reschedule the parent adds `.rescheduled`, and
+                  `.reminder-card.rescheduled .meta-time` plays the swap-in
+                  animation while this value updates reactively. */}
               <span class="meta-time">
                 <ClockIcon />
                 {props.reminder.fireAt

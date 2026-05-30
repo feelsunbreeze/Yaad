@@ -4,13 +4,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { playSfx, playRandomNotify } from "@/lib/audio";
 import { showToast } from "@/lib/toast";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { Reminder, Tab, SnoozePreset } from "@/lib/types";
+import type { Reminder, Tab } from "@/lib/types";
 
 /**
  * Wire shape returned by `list_reminders` / `list_completed`. Matches the
- * `ReminderView` struct in `src-tauri/src/commands.rs` exactly — if you
- * change that struct, mirror it here. Field names use snake_case because
- * Serde serialises Rust struct fields verbatim.
+ * `ReminderView` struct in `src-tauri/src/commands.rs` exactly.
  */
 interface BackendReminder {
   id: string;
@@ -32,11 +30,7 @@ interface FiredPayload {
   due: boolean;
 }
 
-/** Three-hour urgency window, milliseconds. Same threshold the prior UI
- *  used for the "Right now" partition, so the red treatment surfaces at
- *  the time bound the user already calibrated against. */
 const URGENT_WINDOW_MS = 3 * 60 * 60 * 1000;
-
 
 /** End-of-today epoch ms — anything firing before this is in the "today"
  *  bucket; anything after is "upcoming". */
@@ -46,18 +40,13 @@ function endOfTodayMs(now: number): number {
   return d.getTime();
 }
 
-/**
- * Map a Rust `ReminderView` into the UI `Reminder` shape.
- *
- * Derived fields:
- *   - `bucket`  : null / past / before-end-of-day → "today", else → "upcoming"
- *   - `urgent`  : not done AND fires within 3h (or overdue)
- */
+function bucketFor(fireAt: number | null, now: number): "today" | "upcoming" {
+  return fireAt === null || fireAt <= endOfTodayMs(now) ? "today" : "upcoming";
+}
+
 function mapBackend(b: BackendReminder, now: number): Reminder {
   const done = b.status === "completed";
   const fireAt = b.fire_at;
-  const bucket: "today" | "upcoming" =
-    fireAt === null || fireAt <= endOfTodayMs(now) ? "today" : "upcoming";
   const urgent = !done && fireAt !== null && fireAt <= now + URGENT_WINDOW_MS;
 
   return {
@@ -69,21 +58,12 @@ function mapBackend(b: BackendReminder, now: number): Reminder {
     done,
     urgent,
     tag: null,
-    bucket,
+    bucket: bucketFor(fireAt, now),
   };
 }
 
-
 /**
- * Central reminder hook. Owns the entire data lifecycle:
- *
- *   - initial fetch
- *   - listen("reminder:fired") refresh
- *   - on fire: play the right sound (due_now vs random nudge) + in-app toast
- *   - visibility-aware refresh on resume
- *   - surfaces invoke errors via the `error` signal (App.tsx renders a banner)
- *
- * Returns plain accessors + action callbacks so the components stay dumb.
+ * Central reminder hook. Owns the entire data lifecycle.
  */
 export function useReminders() {
   const [reminders, setReminders] = createStore<Reminder[]>([]);
@@ -93,7 +73,10 @@ export function useReminders() {
   const [completedOffset, setCompletedOffset] = createSignal(0);
   const [hasMoreCompleted, setHasMoreCompleted] = createSignal(true);
   const [backendDoneCount, setBackendDoneCount] = createSignal(0);
+  // Cross-tab reschedule → the departing card slides out in this direction.
   const [snoozeDeparting, setSnoozeDeparting] = createSignal<{ id: string; direction: "left" | "right" } | null>(null);
+  // Same-tab reschedule → the card stays put and its time label animates.
+  const [rescheduledId, setRescheduledId] = createSignal<string | null>(null);
   let isLoadingMore = false;
 
   // ── Derived ─────────────────────────────────────────────────────────────
@@ -155,7 +138,6 @@ export function useReminders() {
       if (moreCompleted.length > 0) {
         const now = Date.now();
         const mapped = moreCompleted.map(b => mapBackend(b, now));
-        // We append to the store's array directly.
         setReminders(prev => [...prev, ...mapped]);
         setCompletedOffset(newOffset);
       }
@@ -169,10 +151,7 @@ export function useReminders() {
   async function toggleDone(id: string): Promise<void> {
     const r = reminders.find(x => x.id === id);
     if (!r) return;
-    // Backend `complete` is one-way — Yaad has no "reopen" command. Clicking
-    // a done card is a deliberate no-op until the Rust side grows one.
     if (r.done) return;
-
 
     // Optimistic flip — the check fills immediately, then reconcile with
     // backend truth on refresh.
@@ -200,14 +179,11 @@ export function useReminders() {
       const newTasks = reminders.filter(r => !beforeIds.has(r.id));
       if (newTasks.length > 0) {
         const newTask = newTasks[0];
-
-        // If it landed in a different time-based tab, smoothly auto-switch
         if (newTask.bucket !== tab()) {
           batch(() => {
             setShakingTaskId(newTask.id);
             setTab(newTask.bucket);
           });
-
           setTimeout(() => setShakingTaskId(null), 850);
         }
       }
@@ -219,27 +195,52 @@ export function useReminders() {
     }
   }
 
-  async function snoozeReminder(id: string, preset: SnoozePreset): Promise<void> {
-    try {
-      // Determine the current bucket so we know which direction to slide
-      const currentReminder = reminders.find(r => r.id === id);
-      const currentBucket = currentReminder?.bucket ?? "today";
+  /**
+   * Reschedule a reminder to an explicit fire time (computed on the frontend
+   * by the edit modal — named preset, ± delta, or parsed natural language).
+   * The backend stores the timestamp verbatim via `reschedule_at`, so there's
+   * no parser drift.
+   *
+   * Animation:
+   *   - If the new time keeps the card in the SAME tab, we DON'T slide it
+   *     away — it stays in place and its time label gets a soft "rescheduled"
+   *     animation (see `.reminder-card.rescheduled` in App.css).
+   *   - If it crosses tabs, the card slides out (direction swapped vs the old
+   *     behaviour at the user's request) and the list reloads after the slide.
+   */
+  async function rescheduleReminder(id: string, fireAtMs: number, humanTime: string): Promise<void> {
+    const now = Date.now();
+    const current = reminders.find(r => r.id === id);
+    const currentBucket = current?.bucket ?? "today";
+    const newBucket = bucketFor(fireAtMs, now);
 
-      await invoke("snooze", { id, preset });
+    try {
+      // snake_case keys match the Rust params exactly — robust regardless of
+      // Tauri's camelCase↔snake_case arg conversion.
+      await invoke("reschedule_at", { id, fire_at_ms: fireAtMs, human_time: humanTime });
       playSfx("snooze");
 
-      // Snoozing usually pushes a task later → slide left.
-      // If it somehow moves earlier (rare), slide right.
-      const direction = currentBucket === "upcoming" ? "right" : "left";
-      setSnoozeDeparting({ id, direction });
-
-      // Wait for the slide-out + collapse animation before refreshing
-      await new Promise(r => setTimeout(r, 600));
-      setSnoozeDeparting(null);
-      await loadReminders();
+      if (newBucket === currentBucket) {
+        // Stays in this tab → reload, then flag for the in-place time-swap
+        // animation. No slide, no collapse.
+        await loadReminders();
+        setRescheduledId(id);
+        setTimeout(() => setRescheduledId(null), 1000);
+      } else {
+        // Crosses tabs → slide the card out, then reload. Direction swapped
+        // from the previous mapping per request: a task moving to "upcoming"
+        // now exits left; one moving to "today" exits right.
+        const direction: "left" | "right" = currentBucket === "upcoming" ? "left" : "right";
+        setSnoozeDeparting({ id, direction });
+        await new Promise(r => setTimeout(r, 600));
+        setSnoozeDeparting(null);
+        await loadReminders();
+      }
+      setError(null);
     } catch (e) {
-      console.error("snooze failed:", e);
-      setError(`couldn't snooze: ${stringify(e)}`);
+      console.error("reschedule failed:", e);
+      setSnoozeDeparting(null);
+      setError(`couldn't reschedule: ${stringify(e)}`);
     }
   }
 
@@ -247,47 +248,29 @@ export function useReminders() {
     setError(null);
   }
 
-  /** External (App / components) entry point to surface a one-shot error
-   *  through the same banner the hook uses for invoke failures. */
   function raiseError(msg: string) {
     setError(msg);
   }
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
-  //
-  // Owns:
-  //   - first load
-  //   - reminder:fired subscription (sound + in-app cue + refresh)
-  //   - visibility-aware refresh on resume
 
   onMount(() => {
     let unfire: UnlistenFn | undefined;
 
     function onVisibility() {
-      if (!document.hidden) {
-        // Immediate refresh on resume — relative timestamps and any reminders
-        // fired while hidden are now up to date.
-        void loadReminders();
-      }
+      if (!document.hidden) void loadReminders();
     }
 
     void (async () => {
       await loadReminders();
       unfire = await listen<FiredPayload>("reminder:fired", e => {
-        // `due` is authoritative — set by the backend at enqueue time. The
-        // exact-deadline fire plays due_now; pre-deadline nudges play a random
-        // notify tone. No clock-skew inference.
         if (e.payload?.due) {
           playSfx("dueNow");
         } else {
           playRandomNotify();
         }
-
-        // Guaranteed-visible in-app cue — fires even when the OS toast is
-        // suppressed (Windows dev-mode AUMID, denied permission, etc).
         const title = e.payload?.title?.trim();
         showToast(title ? `Surfacing: ${title}` : "A reminder is surfacing");
-
         void loadReminders();
       });
     })();
@@ -316,10 +299,11 @@ export function useReminders() {
     // actions
     toggleDone,
     addReminder,
-    snoozeReminder,
+    rescheduleReminder,
     loadReminders,
     shakingTaskId,
     snoozeDeparting,
+    rescheduledId,
     hasMoreCompleted,
     loadMoreCompleted,
   };

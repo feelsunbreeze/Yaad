@@ -23,6 +23,116 @@ fn compute_run_at(now_s: i64, fire_at_s: i64) -> i64 {
     now_s + (nanos % (fire_at_s - now_s + 1))
 }
 
+/// Read the user's notification_frequency setting (>= 1). Defaults to 2.
+fn notification_frequency(state: &State<'_, AppState>) -> u64 {
+    state.db.lock().ok()
+        .and_then(|db| db.query_row(
+            "SELECT value FROM settings WHERE key = 'notification_frequency'",
+            [],
+            |r| r.get::<_, String>(0),
+        ).ok())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(2)
+        .max(1)
+}
+
+/// The single, authoritative reschedule path used by both `snooze` (named
+/// presets) and `reschedule_at` (explicit timestamp from the edit modal).
+///
+/// DB correctness — this is where editing/rescheduling used to be able to
+/// throw:
+///   - `occurrences` has `UNIQUE(reminder_id, fire_at)`. Inserting a fresh
+///     occurrence at a time that already has a row (a prior *snoozed*
+///     occurrence, or rescheduling back to the same minute) raised a
+///     constraint error → the UI surfaced "couldn't reschedule".
+///   - Fix: cancel the current pending occurrence, then PURGE every snoozed
+///     row for this reminder AND any row already sitting at the new fire_at,
+///     in one statement, before inserting. Purged rows free their unique
+///     (reminder_id, fire_at) slot, and their still-queued honker jobs become
+///     harmless no-ops because `worker::should_fire()` treats a missing
+///     occurrence as "skip". Net: rescheduling to ANY time, any number of
+///     times, can never collide.
+fn do_reschedule(
+    state: &State<'_, AppState>,
+    id: &str,
+    fire_at_ms: i64,
+    human: &str,
+) -> Result<(), String> {
+    let fire_at_s = fire_at_ms / 1000;
+    let occ_id    = Ulid::new().to_string();
+    let db_now    = Utc::now().timestamp_millis();
+    let frequency = notification_frequency(state);
+
+    let tx = state.honker_db.transaction().map_err(|e| e.to_string())?;
+
+    // Confirm the reminder exists + grab its title (also the error path if the
+    // id is stale — surfaces a clean message rather than a silent failure).
+    let title: String = tx.query_row(
+        "SELECT title FROM reminders WHERE id = ?1",
+        rusqlite::params![id],
+        |r| r.get(0),
+    ).map_err(|_| "reminder no longer exists".to_string())?;
+
+    // Cancel the current pending occurrence.
+    tx.execute(
+        "UPDATE occurrences SET state='snoozed', resolved_at=?1
+         WHERE reminder_id=?2 AND state='pending'",
+        rusqlite::params![db_now, id],
+    ).map_err(|e| e.to_string())?;
+
+    // Purge snoozed rows + anything occupying the target fire_at slot, so the
+    // insert below can never trip UNIQUE(reminder_id, fire_at).
+    tx.execute(
+        "DELETE FROM occurrences
+         WHERE reminder_id=?1 AND (state='snoozed' OR fire_at=?2)",
+        rusqlite::params![id, fire_at_ms],
+    ).map_err(|e| e.to_string())?;
+
+    // Fresh pending occurrence at the new time.
+    tx.execute(
+        "INSERT INTO occurrences (id, reminder_id, fire_at, state, human_time)
+         VALUES (?1, ?2, ?3, 'pending', ?4)",
+        rusqlite::params![occ_id, id, fire_at_ms, human],
+    ).map_err(|e| e.to_string())?;
+
+    // Re-activate the reminder (covers rescheduling a completed task).
+    tx.execute(
+        "UPDATE reminders SET status='active', updated_at=?1, completed_at=NULL WHERE id=?2",
+        rusqlite::params![db_now, id],
+    ).map_err(|e| e.to_string())?;
+
+    let q = state.honker_db.queue("due_reminders", QueueOpts::default());
+
+    // Exact-deadline job (due: true → due_now.wav on fire).
+    let mut exact_opts = EnqueueOpts::default();
+    exact_opts.run_at = Some(fire_at_s);
+    q.enqueue_tx(&tx, &json!({
+        "reminder_id":   id,
+        "occurrence_id": occ_id,
+        "title":         title,
+        "human_time":    human,
+        "attempt":       frequency,
+        "due":           true,
+    }), exact_opts).map_err(|e| e.to_string())?;
+
+    // Random pre-deadline nudges (due: false → random notify tone).
+    for i in 1..frequency {
+        let mut opts = EnqueueOpts::default();
+        opts.run_at = Some(compute_run_at(db_now / 1000, fire_at_s));
+        q.enqueue_tx(&tx, &json!({
+            "reminder_id":   id,
+            "occurrence_id": occ_id,
+            "title":         title,
+            "human_time":    human,
+            "attempt":       i,
+            "due":           false,
+        }), opts).map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ── serialisable view types ──────────────────────────────────────────────────
 
 /// Wire shape returned to the frontend. Mirrors the contract documented in
@@ -64,12 +174,7 @@ pub fn capture_submit(
     let fire_at_ms  = parsed.fire_at_ms;
     let fire_at_s   = fire_at_ms / 1000;
 
-    let frequency = state.db.lock().unwrap().query_row(
-        "SELECT value FROM settings WHERE key = 'notification_frequency'",
-        [],
-        |r| r.get::<_, String>(0)
-    ).and_then(|s| s.parse::<u64>().map_err(|_| rusqlite::Error::QueryReturnedNoRows))
-     .unwrap_or(2).max(1);
+    let frequency = notification_frequency(&state);
 
     let tx = state.honker_db.transaction().map_err(|e| e.to_string())?;
 
@@ -190,21 +295,21 @@ pub fn complete(
     Ok(())
 }
 
-// ── snooze ───────────────────────────────────────────────────────────────────
-
+// ── snooze (named presets) ────────────────────────────────────────────────────
+//
+// Kept for the quick named presets. Computes a concrete fire time, then hands
+// off to `do_reschedule` so the occurrence-swap + enqueue logic lives in
+// exactly one place.
 #[tauri::command]
 pub fn snooze(
     state: State<'_, AppState>,
     id: String,
-    preset: String,       // "1h" | "tonight" | "tomorrow" | "next_week"
+    preset: String,       // "1h" | "tonight" | "tomorrow" | "next_week" | <natural language>
 ) -> Result<String, String> {
     use chrono::{Local, Duration, TimeZone, NaiveTime};
 
     let now = Local::now();
 
-    /// Resolve a (hour, minute) on the requested day to a concrete local
-    /// DateTime. DST gaps return a fallback (the day's later same time + 1h)
-    /// so we never panic on `with_hour(...).unwrap()`.
     fn at(date: chrono::NaiveDate, h: u32, m: u32) -> Option<chrono::DateTime<Local>> {
         let naive = date.and_time(NaiveTime::from_hms_opt(h, m, 0)?);
         match Local.from_local_datetime(&naive) {
@@ -242,72 +347,26 @@ pub fn snooze(
         }
     };
 
-    let fire_at_s  = fire_at_ms / 1000;
-    let occ_id     = Ulid::new().to_string();
-    let db_now     = Utc::now().timestamp_millis();
-
-    let frequency = state.db.lock().unwrap().query_row(
-        "SELECT value FROM settings WHERE key = 'notification_frequency'",
-        [],
-        |r| r.get::<_, String>(0)
-    ).and_then(|s| s.parse::<u64>().map_err(|_| rusqlite::Error::QueryReturnedNoRows))
-     .unwrap_or(2).max(1);
-
-    let tx = state.honker_db.transaction().map_err(|e| e.to_string())?;
-
-    tx.execute(
-        "UPDATE occurrences SET state='snoozed', resolved_at=?1
-         WHERE reminder_id=?2 AND state='pending'",
-        rusqlite::params![db_now, id],
-    ).map_err(|e| e.to_string())?;
-
-    let title: String = tx.query_row(
-        "SELECT title FROM reminders WHERE id=?1",
-        rusqlite::params![id],
-        |r| r.get(0),
-    ).map_err(|e| e.to_string())?;
-
-    tx.execute(
-        "INSERT INTO occurrences (id, reminder_id, fire_at, state, human_time)
-         VALUES (?1, ?2, ?3, 'pending', ?4)",
-        rusqlite::params![occ_id, id, fire_at_ms, human],
-    ).map_err(|e| e.to_string())?;
-
-    tx.execute(
-        "UPDATE reminders SET status='active', updated_at=?1, completed_at=NULL WHERE id=?2",
-        rusqlite::params![db_now, id],
-    ).map_err(|e| e.to_string())?;
-
-    let q = state.honker_db.queue("due_reminders", QueueOpts::default());
-
-    // Enqueue exact deadline job (due: true → due_now.wav on fire).
-    let mut exact_opts = EnqueueOpts::default();
-    exact_opts.run_at = Some(fire_at_s);
-    q.enqueue_tx(&tx, &json!({
-        "reminder_id":   id,
-        "occurrence_id": occ_id,
-        "title":         title,
-        "human_time":    human,
-        "attempt":       frequency,
-        "due":           true,
-    }), exact_opts).map_err(|e| e.to_string())?;
-
-    // Enqueue random pre-deadline nudges (due: false → random notify tone).
-    for i in 1..frequency {
-        let mut opts = EnqueueOpts::default();
-        opts.run_at = Some(compute_run_at(db_now / 1000, fire_at_s));
-        q.enqueue_tx(&tx, &json!({
-            "reminder_id":   id,
-            "occurrence_id": occ_id,
-            "title":         title,
-            "human_time":    human,
-            "attempt":       i,
-            "due":           false,
-        }), opts).map_err(|e| e.to_string())?;
-    }
-
-    tx.commit().map_err(|e| e.to_string())?;
+    do_reschedule(&state, &id, fire_at_ms, &human)?;
     Ok(human)
+}
+
+// ── reschedule_at (explicit timestamp from the edit modal) ─────────────────────
+//
+// The edit modal computes the target time on the frontend (named presets,
+// ± delta chips relative to the current fire time, or parsed natural language)
+// and sends the absolute millisecond timestamp + a human label. The backend is
+// the single source of truth for storage; it does not re-parse, so there is no
+// chance of frontend/backend drift.
+#[tauri::command]
+pub fn reschedule_at(
+    state: State<'_, AppState>,
+    id: String,
+    fire_at_ms: i64,
+    human_time: String,
+) -> Result<String, String> {
+    do_reschedule(&state, &id, fire_at_ms, &human_time)?;
+    Ok(human_time)
 }
 
 // ── test_notification ────────────────────────────────────────────────────────
@@ -316,10 +375,6 @@ pub fn snooze(
 //   Windows 11 → WinRT ToastNotificationManager → Action Center
 //   macOS      → UNUserNotificationCenter
 //   Linux      → libnotify over DBus (notify-send / libnotify-bin required)
-//
-// We explicitly verify the OS permission first so the user sees the
-// underlying reason if the toast doesn't appear, rather than us pretending
-// it was delivered.
 #[tauri::command]
 pub fn test_notification(app: AppHandle) -> Result<(), String> {
     let granted = ensure_permission(&app)?;
@@ -426,9 +481,6 @@ fn local_tz_id() -> String {
 /// platform-specific local offset as a coarse fingerprint when no real
 /// tz crate is available.
 fn iana_time_zone_get() -> Option<String> {
-    // chrono doesn't carry an IANA name. Without pulling in the
-    // `iana-time-zone` crate, we approximate using the offset string.
-    // Good enough as a marker; replace with `iana-time-zone` for accuracy.
     let offset = chrono::Local::now().offset().to_string();
     Some(format!("local{offset}"))
 }
@@ -463,7 +515,6 @@ pub fn set_settings(state: State<'_, AppState>, key: String, value: String) -> R
 #[tauri::command]
 pub fn factory_reset(state: State<'_, AppState>) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    // Wipe all tables
     db.execute_batch(
         "DELETE FROM notification_events;
          DELETE FROM behavior_events;
@@ -471,11 +522,8 @@ pub fn factory_reset(state: State<'_, AppState>) -> Result<(), String> {
          DELETE FROM reminders;
          DELETE FROM settings;"
     ).map_err(|e| e.to_string())?;
-
-    // Wipe honker queue (it has its own connection, but it's the same DB file and WAL allows it if we coordinate,
-    // actually, just deleting from honker's internal tables using a fresh transaction is safer)
-    // Wait, let's just wipe the app tables. The jobs might still be in honker queue,
-    // but the occurrences are gone, so worker will skip them anyway!
+    // The occurrences are gone, so any honker jobs still in the queue become
+    // no-ops (worker's should_fire skips when the occurrence/reminder is gone).
     Ok(())
 }
 

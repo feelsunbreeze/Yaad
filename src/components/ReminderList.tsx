@@ -228,29 +228,61 @@ export function ReminderList(props: ReminderListProps) {
     }
   }
 
+  /**
+   * Fire the celebration confetti.
+   *
+   * IMPORTANT — why this uses its own canvas + `useWorker: false`:
+   * canvas-confetti's default `confetti()` lazily spins up a Web Worker from a
+   * `blob:` URL. That works in `tauri dev` (the dev server's CSP is permissive)
+   * but is BLOCKED by the production CSP in the built app — `worker-src` falls
+   * through to `default-src 'self'`, so `new Worker(blobURL)` is rejected and
+   * the confetti silently never renders. Running on an app-owned canvas with
+   * `useWorker: false` keeps everything on the main thread (pure 2D canvas
+   * drawing, no worker, no blob) so it behaves identically in dev and in the
+   * built Windows/macOS/Linux app. (The CSP also now allows `worker-src blob:`
+   * as a belt-and-suspenders, but we no longer depend on it.)
+   */
   async function triggerConfetti() {
     playSfx("allDone");
 
     await new Promise(r => setTimeout(r, 150));
 
-    confetti({
+    if (typeof document === "undefined") return;
+
+    const canvas = document.createElement("canvas");
+    canvas.style.position = "fixed";
+    canvas.style.inset = "0";
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+    canvas.style.pointerEvents = "none";
+    canvas.style.zIndex = "1000";
+    document.body.appendChild(canvas);
+
+    const fire = confetti.create(canvas, { resize: true, useWorker: false });
+    const colors = ["#B8924A", "#C96B5A", "#74c189", "#F5EFE0"];
+
+    void fire({
       particleCount: 50,
       angle: 60,
       spread: 60,
       origin: { x: 0, y: 0.65 },
-      colors: ['#B8924A', '#C96B5A', '#74c189', '#F5EFE0'],
+      colors,
       disableForReducedMotion: true,
-      zIndex: 1000
     });
-    confetti({
+    void fire({
       particleCount: 50,
       angle: 120,
       spread: 60,
       origin: { x: 1, y: 0.65 },
-      colors: ['#B8924A', '#C96B5A', '#74c189', '#F5EFE0'],
+      colors,
       disableForReducedMotion: true,
-      zIndex: 1000
     });
+
+    // Tear the canvas back down once the burst has settled.
+    window.setTimeout(() => {
+      try { fire.reset(); } catch { /* noop */ }
+      canvas.remove();
+    }, 3500);
   }
 
   return (

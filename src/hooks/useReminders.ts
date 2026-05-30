@@ -215,9 +215,10 @@ export function useReminders() {
     const newBucket = bucketFor(fireAtMs, now);
 
     try {
-      // snake_case keys match the Rust params exactly — robust regardless of
-      // Tauri's camelCase↔snake_case arg conversion.
-      await invoke("reschedule_at", { id, fire_at_ms: fireAtMs, human_time: humanTime });
+      // Tauri v2 exposes snake_case Rust params as camelCase to JS, so the
+      // keys MUST be camelCase here (fireAtMs / humanTime). Passing snake_case
+      // fails with "missing required key fireAtMs".
+      await invoke("reschedule_at", { id, fireAtMs, humanTime });
       playSfx("snooze");
 
       if (newBucket === currentBucket) {

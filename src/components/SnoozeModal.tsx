@@ -1,4 +1,5 @@
 import { createSignal, createEffect, onCleanup, Show, For } from "solid-js";
+import { Transition } from "solid-transition-group";
 import { invoke } from "@tauri-apps/api/core";
 import { Modal } from "./Modal";
 import { ParseToken } from "./ParseToken";
@@ -235,12 +236,14 @@ export function SnoozeModal(props: SnoozeModalProps) {
         </button>
       </div>
 
-      <Show when={parsedText()}>
-        <div class="snooze-preview">
-          <span class="parse-prefix">↳ will surface&nbsp;</span>
-          <ParseToken value={parsedText()} />
-        </div>
-      </Show>
+      <Transition name="preview">
+        <Show when={parsedText()}>
+          <div class="snooze-preview">
+            <span class="parse-prefix">↳ will surface&nbsp;</span>
+            <ParseToken value={parsedText()} />
+          </div>
+        </Show>
+      </Transition>
 
       <div class="reschedule-adjust">
         <label class="reschedule-label">Nudge</label>

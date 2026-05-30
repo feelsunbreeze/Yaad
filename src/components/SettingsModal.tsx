@@ -177,7 +177,7 @@ export function SettingsModal(props: SettingsModalProps) {
             onInput={updateFrequency}
             class="settings-slider"
           />
-          <p class="settings-desc" style="margin-top: 0.4rem; opacity: 0.8; font-size: 0.7rem;">
+          <p class="settings-desc" style="margin-top: 0.2rem; opacity: 0.8; font-size: 0.7rem;">
             {frequency() === "1"
               ? "We'll notify you exactly at the deadline."
               : `We'll notify you ${parseInt(frequency()) - 1} time${parseInt(frequency()) - 1 === 1 ? "" : "s"} randomly before the deadline, and once exactly at the deadline.`}

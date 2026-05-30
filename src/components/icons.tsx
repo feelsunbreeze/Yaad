@@ -86,12 +86,15 @@ export function SortTimeIcon() {
 }
 
 /**
- * Cute pencil icon for the reschedule button. Compact, warm, minimal.
+ * Reschedule/later icon. A clock face with a forward-sweeping arrow
+ * to indicate pushing the task forward in time.
  */
-export function PencilIcon() {
+export function RescheduleIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M12 7v5l4 2" />
     </svg>
   );
 }

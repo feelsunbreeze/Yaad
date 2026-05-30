@@ -1,6 +1,6 @@
 import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import type { Reminder } from "@/lib/types";
-import { CheckIcon, ClockIcon, PencilIcon } from "./icons";
+import { CheckIcon, ClockIcon, RescheduleIcon } from "./icons";
 import { formatResolvedAgo, formatRelativeLive } from "@/lib/date";
 import { playSfx } from "@/lib/audio";
 
@@ -142,7 +142,7 @@ export function ReminderCard(props: ReminderCardProps) {
             props.onSnoozeRequest?.(props.reminder.id);
           }}
         >
-          <PencilIcon />
+          <RescheduleIcon />
         </button>
       </Show>
     </div>

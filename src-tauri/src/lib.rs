@@ -4,8 +4,19 @@ pub mod commands;
 pub mod worker;
 pub mod parser;
 
-use tauri::Manager;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager, Runtime, WindowEvent};
 use tauri_plugin_notification::{NotificationExt, PermissionState};
+
+/// Bring the main window back from the tray: show + unminimize + focus.
+fn show_main<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,10 +36,8 @@ pub fn run() {
             app.manage(state);
 
             // Bootstrap OS notification permission up front so the background
-            // worker can fire real Windows 11 / macOS / Linux toasts even if
-            // the JS layer hasn't requested permission yet (e.g. autostart at
-            // boot with the window hidden, or first reminder firing before the
-            // user has interacted with the UI).
+            // worker can fire real Windows / macOS / Linux toasts even if the
+            // JS layer hasn't requested permission yet.
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 match handle.notification().permission_state() {
@@ -39,6 +48,51 @@ pub fn run() {
                     Err(e) => eprintln!("[yaad] could not query notification permission: {e}"),
                 }
             });
+
+            // ── System tray ───────────────────────────────────────────────
+            // Yaad is a background reminder app: closing the window must NOT
+            // quit it (the worker has to keep firing). The tray is the home it
+            // retreats to and the way back in.
+            let show_item = MenuItem::with_id(app, "show", "Open Yaad", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit Yaad", true, None::<&str>)?;
+            let tray_menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+            let _tray = TrayIconBuilder::with_id("yaad-tray")
+                .tooltip("Yaad")
+                .icon(app.default_window_icon().cloned().expect("default window icon"))
+                .menu(&tray_menu)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => show_main(app),
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    // Left-click the tray icon → bring Yaad back.
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        show_main(tray.app_handle());
+                    }
+                })
+                .build(app)?;
+
+            // ── Close → hide to tray (don't quit) ─────────────────────────
+            // Intercept the window close request (custom titlebar ×, OS close,
+            // Alt+F4) and hide instead of destroying the window. The process
+            // stays alive in the tray; "Quit Yaad" from the tray menu is the
+            // only real exit.
+            if let Some(window) = app.get_webview_window("main") {
+                let w = window.clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        let _ = w.hide();
+                        api.prevent_close();
+                    }
+                });
+            }
 
             worker::start_worker(app.handle().clone(), honker_db);
 

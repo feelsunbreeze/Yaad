@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "yaad",
+  "productName": "Yaad",
   "version": "0.1.0",
   "identifier": "com.feelsunbreeze.yaad",
   "build": {
@@ -25,7 +25,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' ipc: http://ipc.localhost; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
+      "csp": "default-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
     }
   },
   "bundle": {
@@ -46,14 +46,16 @@
         "depends": [
           "libnotify4 (>= 0.7.7)",
           "libwebkit2gtk-4.1-0",
-          "libgtk-3-0"
+          "libgtk-3-0",
+          "libayatana-appindicator3-1"
         ]
       },
       "rpm": {
         "depends": [
           "libnotify >= 0.7.7",
           "webkit2gtk4.1",
-          "gtk3"
+          "gtk3",
+          "libappindicator-gtk3"
         ]
       },
       "appimage": {

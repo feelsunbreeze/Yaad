@@ -11,7 +11,7 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { Tabs } from "@/components/Tabs";
 import { ReminderList } from "@/components/ReminderList";
 import { AddBar } from "@/components/AddBar";
-import { playSfx } from "@/lib/audio";
+import { playSfx, setSfxMuted } from "@/lib/audio";
 import { useReminders } from "@/hooks/useReminders";
 import { formatDatePill, formatGreeting, formatTimeLive } from "@/lib/date";
 import { Onboarding } from "@/components/Onboarding";
@@ -21,10 +21,9 @@ import { Titlebar } from "@/components/Titlebar";
 import { ToastRoot } from "@/components/Toast";
 
 /**
- * Notification permission bootstrap from PR #1 — preserved here because
- * it's functional, not visual. Without granted permission Windows 11 /
- * macOS / Linux silently swallow toasts from the Rust worker, so we ask
- * once on mount; the OS remembers the choice forever after.
+ * Notification permission bootstrap — preserved because it's functional, not
+ * visual. Without granted permission Windows / macOS / Linux silently swallow
+ * toasts from the Rust worker, so we ask once on mount.
  */
 async function ensureNotificationPermission(): Promise<void> {
   try {
@@ -43,30 +42,13 @@ async function ensureNotificationPermission(): Promise<void> {
   }
 }
 
-/**
- * Thin composition root. Reminder data lifecycle (initial fetch, OS event
- * subscriptions, visibility refresh) lives inside `useReminders`. App owns
- * the notification permission flow, the greeting clock, and the test-alert
- * hook on the gear icon.
- *
- * Layout:
- *
- *   .app             (grid: auto auto auto 1fr auto, max 440px column)
- *   ├── Titlebar     (custom window minimize/close control bar)
- *   ├── .header      (greeting + progress + tabs, single rise animation)
- *   ├── .error-banner (mounted only when an invoke fails)
- *   ├── .list-wrap   (scrollable section + cards / empty state)
- *   └── .add-bar     (input + quick tags)
- *
- *   ToastRoot        (fixed-position in-app notification cue, fires on
- *                     reminder:fired even when the OS toast is suppressed)
- */
 export default function App() {
   const r = useReminders();
 
   const [userName, setUserName] = createSignal<string | null>(null);
   const [timeFormat, setTimeFormat] = createSignal<string>("12h");
-  const [snoozeReminder, setSnoozeReminder] = createSignal<{ id: string; title: string } | null>(null);
+  const [snoozeReminder, setSnoozeReminder] =
+    createSignal<{ id: string; title: string; fireAt: number | null } | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = createSignal(false);
   const [loadingInitial, setLoadingInitial] = createSignal(true);
 
@@ -87,6 +69,8 @@ export default function App() {
       if (settings["time_format"]) {
         setTimeFormat(settings["time_format"]);
       }
+      // Sound defaults ON; only an explicit "false" mutes.
+      setSfxMuted(settings["sound_enabled"] === "false");
     } catch (e) {
       console.error("Failed to load settings on mount", e);
     } finally {
@@ -97,11 +81,10 @@ export default function App() {
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.ctrlKey && e.key === "Tab") {
-        e.preventDefault(); // Prevent default OS/browser tab switching
+        e.preventDefault();
         return;
       }
 
-      // Ignore single-character shortcuts if the user is typing in an input
       const activeTag = document.activeElement?.tagName;
       if (activeTag === "INPUT" || activeTag === "TEXTAREA") {
         return;
@@ -207,21 +190,23 @@ export default function App() {
         onToggle={r.toggleDone}
         onSnoozeRequest={(id) => {
           const rem = r.visible().find(x => x.id === id);
-          if (rem) setSnoozeReminder({ id, title: rem.title });
+          if (rem) setSnoozeReminder({ id, title: rem.title, fireAt: rem.fireAt });
         }}
         shakingTaskId={r.shakingTaskId()}
         onLoadMore={r.loadMoreCompleted}
         snoozeDeparting={r.snoozeDeparting()}
+        rescheduledId={r.rescheduledId()}
       />
 
       <SnoozeModal
         isOpen={snoozeReminder() !== null}
         taskTitle={snoozeReminder()?.title ?? ""}
+        currentFireAt={snoozeReminder()?.fireAt ?? null}
         onClose={() => setSnoozeReminder(null)}
-        onSubmit={(preset) => {
+        onReschedule={(fireAtMs, humanTime) => {
           const s = snoozeReminder();
           if (s) {
-            r.snoozeReminder(s.id, preset);
+            r.rescheduleReminder(s.id, fireAtMs, humanTime);
           }
           setSnoozeReminder(null);
         }}

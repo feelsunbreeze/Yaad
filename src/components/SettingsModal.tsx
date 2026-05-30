@@ -2,6 +2,7 @@ import { createSignal, createEffect } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { Modal } from "./Modal";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { setSfxMuted } from "@/lib/audio";
 
 export interface SettingsModalProps {
   currentName: string;
@@ -13,24 +14,12 @@ export interface SettingsModalProps {
   onFactoryReset: () => void;
 }
 
-/**
- * The Settings panel. Lives on top of the reusable Modal shell so the
- * enter/exit animations (backdrop fade + content scale-and-rise) come for
- * free; clicking the backdrop, the X button, or hitting Escape all route
- * through the same `onClose` deferred-unmount path.
- *
- * The factory-reset button no longer triggers a native window.confirm() —
- * it opens a themed ConfirmDialog stacked above this modal. The
- * destructive button is styled red; the dialog matches the cream/amber
- * palette and animates in/out with the same easing as the parent.
- */
 export function SettingsModal(props: SettingsModalProps) {
   const [name, setName] = createSignal(props.currentName);
   const [frequency, setFrequency] = createSignal("2");
+  const [soundOn, setSoundOn] = createSignal(true);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = createSignal(false);
 
-  // Keep the local name in sync with whatever App.tsx hands us, and pull
-  // the latest settings from the backend every time the modal opens.
   createEffect(() => {
     if (props.isOpen) {
       setName(props.currentName);
@@ -44,6 +33,7 @@ export function SettingsModal(props: SettingsModalProps) {
       if (settings["notification_frequency"]) {
         setFrequency(settings["notification_frequency"]);
       }
+      setSoundOn(settings["sound_enabled"] !== "false");
     } catch (e) {
       console.error("Failed to load settings", e);
     }
@@ -77,6 +67,16 @@ export function SettingsModal(props: SettingsModalProps) {
       props.onTimeFormatChange(fmt);
     } catch (err) {
       console.error("Failed to save time format", err);
+    }
+  }
+
+  async function updateSound(on: boolean) {
+    setSoundOn(on);
+    setSfxMuted(!on); // live — affects the next sound immediately
+    try {
+      await invoke("set_settings", { key: "sound_enabled", value: on ? "true" : "false" });
+    } catch (err) {
+      console.error("Failed to save sound setting", err);
     }
   }
 
@@ -145,6 +145,26 @@ export function SettingsModal(props: SettingsModalProps) {
         </div>
 
         <div class="settings-section">
+          <label>Sound</label>
+          <div class="segmented-control">
+            <button
+              type="button"
+              class={`segment-option${soundOn() ? " active" : ""}`}
+              onClick={() => updateSound(true)}
+            >
+              On
+            </button>
+            <button
+              type="button"
+              class={`segment-option${!soundOn() ? " active" : ""}`}
+              onClick={() => updateSound(false)}
+            >
+              Off
+            </button>
+          </div>
+        </div>
+
+        <div class="settings-section">
           <label>Notification Frequency</label>
           <p class="settings-desc">
             How many times should we notify you? ({frequency()} time{frequency() === "1" ? "" : "s"})
@@ -164,7 +184,7 @@ export function SettingsModal(props: SettingsModalProps) {
           </p>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" style="margin-bottom: 0;">
           <label>System</label>
           <div class="settings-actions">
             <button

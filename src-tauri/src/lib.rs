@@ -49,6 +49,7 @@ pub fn run() {
             commands::list_reminders,
             commands::complete,
             commands::snooze,
+            commands::reschedule_at,
             commands::test_notification,
             commands::list_completed,
             commands::count_completed,

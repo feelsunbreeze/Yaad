@@ -21,6 +21,11 @@
  *   3. Every play resumes the context first (covers the window-hidden /
  *      OS-suspended case when a reminder fires while minimised).
  *
+ * Mute: a single in-memory flag, driven from the persisted `sound_enabled`
+ * setting (App reads it on mount; Settings + Onboarding toggle it live). When
+ * muted, `playSfx` early-returns before creating any source. The silent
+ * keep-alive still runs (it's inaudible anyway) so unmuting is instant.
+ *
  * The exported surface (`playSfx`, `playRandomNotify`) is unchanged, so call
  * sites don't need to know any of this.
  */
@@ -63,6 +68,19 @@ const buffers = new Map<SfxName, AudioBuffer>();
 let decodeStarted = false;
 let keepAlive: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
 let keepAliveTimer: number | undefined;
+
+// ── Mute ──────────────────────────────────────────────────────────────────
+let muted = false;
+
+/** Toggle all sound effects on/off. Driven by the `sound_enabled` setting. */
+export function setSfxMuted(value: boolean): void {
+  muted = value;
+}
+
+/** Current mute state — handy for initialising a settings toggle. */
+export function isSfxMuted(): boolean {
+  return muted;
+}
 
 /** Lazily create the AudioContext + master gain. Created suspended on most
  *  platforms; `unlock()` / `resume()` brings it live after a user gesture. */
@@ -186,6 +204,8 @@ if (typeof window !== "undefined") {
  * to a lazy decode so nothing is silently lost.
  */
 export function playSfx(name: SfxName): void {
+  if (muted) return;
+
   const c = ensureContext();
   if (!c || !masterGain) return;
 
@@ -204,6 +224,7 @@ export function playSfx(name: SfxName): void {
       const arr = await res.arrayBuffer();
       const decoded = await c.decodeAudioData(arr);
       buffers.set(name, decoded);
+      if (muted) return; // user muted while we were decoding
       await resume();
       fire(c, masterGain!, decoded);
     } catch (e) {

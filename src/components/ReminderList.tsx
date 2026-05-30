@@ -23,29 +23,18 @@ export interface ReminderListProps {
   tab: Tab;
   /** Forwarded down to each card. */
   onToggle: (id: string) => void;
-  /** Callback to request a snooze modal for a reminder card. */
+  /** Callback to request a reschedule modal for a reminder card. */
   onSnoozeRequest: (id: string) => void;
   /** ID of a newly added task that triggered an auto-switch. */
   shakingTaskId?: string | null;
   /** Callback to load more completed tasks */
   onLoadMore?: () => void;
-  /** Active snooze departure animation state */
+  /** Active reschedule departure animation state (cross-tab slide). */
   snoozeDeparting?: { id: string; direction: "left" | "right" } | null;
+  /** ID of a card just rescheduled within the same tab (in-place time swap). */
+  rescheduledId?: string | null;
 }
 
-/**
- * The scrollable middle panel. When the active tab has nothing, the
- * empty-state (smiley + italic line) takes the whole panel. Otherwise we
- * render the section label and a `<For>` over the cards.
- *
- * Scroll shadow: a sticky bottom gradient fades in when there's more content
- * below, disappears when scrolled to the bottom.
- *
- * Scrollbar: uses `overflow: overlay` (Chromium) so the thumb is drawn ON TOP
- * of content with zero width reservation — no layout shift ever. The thumb is
- * invisible until scrolling begins (.scrolling class), then fades out 1.2 s
- * after the last scroll event via an idle timer.
- */
 export function ReminderList(props: ReminderListProps) {
   let listRef: HTMLElement | undefined;
   let listContentRef: HTMLDivElement | undefined;
@@ -113,8 +102,6 @@ export function ReminderList(props: ReminderListProps) {
 
     // ── Scroll shadow ──────────────────────────────────────────
     function check() {
-      // Require at least 24px of scrollable area to consider it overflowing,
-      // avoiding sticky scroll shadow artifacts on near-perfect fits (e.g. 2 tasks).
       const overflow = el.scrollHeight > el.clientHeight + 24;
       const notAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight > 24;
       setShowShadow(overflow && notAtBottom);
@@ -122,7 +109,6 @@ export function ReminderList(props: ReminderListProps) {
     check();
 
     // ── Scrollbar fade ─────────────────────────────────────────
-    // Show the thumb the moment scrolling starts; hide 1.2 s after last event.
     let idleTimer: number | undefined;
     function onScroll() {
       check();
@@ -139,11 +125,9 @@ export function ReminderList(props: ReminderListProps) {
 
     el.addEventListener("scroll", onScroll, { passive: true });
 
-    // Re-check whenever the list resizes (window resize, height drag, etc).
     const ro = new ResizeObserver(check);
     ro.observe(el);
 
-    // Re-check whenever visible children change (card added/completed/tab switch).
     const mo = new MutationObserver(check);
     mo.observe(el, { childList: true, subtree: true });
 
@@ -192,11 +176,9 @@ export function ReminderList(props: ReminderListProps) {
     const { x, y, hover, pressed } = smileyState();
     if (!hover) return "";
 
-    // Wobbly effect: dramatic rotation and scale up
     const rotateX = -y / 0.5;
     const rotateY = x / 0.5;
 
-    // Squeeze down slightly when clicked for dynamic feedback
     const scale = pressed ? 1.05 : 1.3;
     return `perspective(400px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(${scale})`;
   });
@@ -210,10 +192,7 @@ export function ReminderList(props: ReminderListProps) {
     const currentCount = props.reminders.length;
     const currentTab = props.tab;
 
-    // Trigger confetti when list becomes empty (and we didn't just switch tabs)
     if (prevTabEffect === currentTab && prevCount > 0 && currentCount === 0 && (currentTab === "today" || currentTab === "upcoming")) {
-      // Wait for the empty-state fade-in animation to fully complete (1.2s)
-      // before importing and firing confetti so we don't jank the CSS transition.
       setTimeout(triggerConfetti, 1050);
     }
 
@@ -249,15 +228,12 @@ export function ReminderList(props: ReminderListProps) {
   }
 
   async function triggerConfetti() {
-    // Dynamic import first to avoid network latency messing up our audio timing
     const confetti = (await import('canvas-confetti')).default;
 
     playSfx("allDone");
 
-    // Wait slightly so the visual burst hits exactly on the peak of the audio pop
     await new Promise(r => setTimeout(r, 150));
 
-    // Lightweight dual burst
     confetti({
       particleCount: 50,
       angle: 60,
@@ -312,6 +288,7 @@ export function ReminderList(props: ReminderListProps) {
                     ? props.snoozeDeparting.direction
                     : undefined
                 }
+                justRescheduled={props.rescheduledId === r.id}
               />
             )}
           </For>
@@ -338,4 +315,3 @@ export function ReminderList(props: ReminderListProps) {
     </main>
   );
 }
-

@@ -88,6 +88,14 @@ pub fn init_db(app_dir: PathBuf) -> Result<AppState, Box<dyn std::error::Error>>
     // we just try and ignore the "duplicate column name" error. Each
     // migration block is safe to run on any DB version.
     let _ = conn.execute("ALTER TABLE occurrences ADD COLUMN human_time TEXT", []);
+    // notified_count: how many notifications have fired for a reminder since
+    // its last (re)schedule. Reset to 0 on reschedule so the task receives a
+    // fresh cycle; the worker bumps it on each fire. NOT NULL needs a default
+    // so existing rows backfill to 0.
+    let _ = conn.execute(
+        "ALTER TABLE reminders ADD COLUMN notified_count INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
 
     Ok(AppState {
         db: Mutex::new(conn),

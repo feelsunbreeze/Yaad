@@ -6,18 +6,16 @@
 //!   Linux    → libnotify over DBus (requires notify-send / libnotify-bin)
 //!
 //! ADHD strategy:
-//!   1. Pre-deadline "nudge" notifications fire at random moments before the
-//!      deadline (scheduled up-front in commands.rs), plus one exact-deadline
-//!      "due" notification. Count is the user's notification_frequency setting.
-//!   2. Pattern-interrupt message framing — not "REMINDER:", feels human.
+//!   1. Pre-deadline "nudge" notifications are scheduled up-front in
+//!      commands.rs::schedule_times — a deadline-anchored geometric cadence
+//!      (no first-5s, no back-to-back), plus one exact-deadline "due" toast.
+//!   2. Pattern-interrupt framing — pre-deadline nudges rotate human phrasings;
+//!      the exact deadline uses an explicit soft frame: "it's time — <title>".
 //!
 //! Architecture:
 //!   - Main loop: claim job → spawn detached thread → continue claiming.
-//!     Keeps any per-job work off the worker thread so simultaneous reminders
-//!     don't serialise behind each other.
-//!   - Per-job thread: pre-fire DB check (skip if the occurrence was
-//!     completed/snoozed since enqueue) → OS notification → ack → emit
-//!     `reminder:fired` so the UI plays its sound + in-app cue.
+//!   - Per-job thread: pre-fire DB check (skip if completed/snoozed) → OS
+//!     notification → ack → bump notified_count → emit `reminder:fired`.
 
 use honker::{Database, QueueOpts, Job};
 use tauri::{AppHandle, Emitter, Manager};
@@ -27,7 +25,7 @@ use serde_json::{json, Value};
 
 use crate::db::AppState;
 
-/// Message framings — cycle so no two consecutive notifications sound identical.
+/// Pre-deadline framings — cycle so no two consecutive nudges sound identical.
 const FRAMINGS: &[&str] = &[
     "hey —",
     "while you're there —",
@@ -45,10 +43,6 @@ pub fn start_worker(app: AppHandle, db: Database) {
         loop {
             match q.claim_one("notifier-1") {
                 Ok(Some(job)) => {
-                    // Detach onto its own thread so the worker can immediately
-                    // claim the next due job. process_job reaches the DB through
-                    // the managed AppState (via AppHandle), so it needs no
-                    // honker handle of its own.
                     let app_thread = app.clone();
                     std::thread::spawn(move || {
                         process_job(app_thread, job);
@@ -67,10 +61,6 @@ pub fn start_worker(app: AppHandle, db: Database) {
 }
 
 /// One job's lifecycle, off the main worker thread.
-///
-/// `job.ack()` is intentionally called late (after fire) so that if the
-/// process is killed mid-execution honker re-claims the job after its
-/// visibility timeout.
 fn process_job(app: AppHandle, job: Job) {
     let payload: Value = serde_json::from_slice(&job.payload).unwrap_or_default();
 
@@ -94,15 +84,9 @@ fn process_job(app: AppHandle, job: Job) {
         .unwrap_or("")
         .to_string();
 
-    // Whether this is the exact-deadline ("due now") fire vs a pre-deadline
-    // nudge. Set by commands.rs at enqueue time so the UI can deterministically
-    // choose the due_now sound vs a random notify tone — no fragile clock-skew
-    // inference on the frontend.
     let due = payload.get("due").and_then(|v| v.as_bool()).unwrap_or(true);
 
     // ── Pre-fire DB check ─────────────────────────────────────────────────
-    // Between enqueue and now the user may have completed or snoozed this
-    // reminder. Skip firing toasts for resolved occurrences.
     let should_fire = should_fire(&app, &reminder_id, &occurrence_id).unwrap_or(true);
     if !should_fire {
         let _ = job.ack();
@@ -110,11 +94,6 @@ fn process_job(app: AppHandle, job: Job) {
     }
 
     // ── Permission sanity check ───────────────────────────────────────────
-    // On macOS (and Windows with an unregistered AppUserModelID) `.show()`
-    // returns Ok but the toast never appears when permission isn't granted.
-    // Surface that in the log instead of leaving the user to guess. We still
-    // emit `reminder:fired` below regardless, so the in-app cue + sound fire
-    // even when the OS layer stays silent.
     match app.notification().permission_state() {
         Ok(PermissionState::Granted) => {}
         Ok(other) => eprintln!(
@@ -125,6 +104,8 @@ fn process_job(app: AppHandle, job: Job) {
     }
 
     // ── Build message body ────────────────────────────────────────────────
+    // The exact deadline gets an explicit soft frame; pre-deadline nudges
+    // rotate the human framings.
     let body = if due {
         format!("it's time — {title}")
     } else {
@@ -150,10 +131,8 @@ fn process_job(app: AppHandle, job: Job) {
 
     let _ = job.ack();
     let _ = log_fire(&app, &reminder_id, &occurrence_id, fire_result.is_ok());
+    let _ = bump_notified_count(&app, &reminder_id);
 
-    // Tell the UI to refresh + play its sound + show the in-app cue. This is
-    // the guaranteed-delivered path even when the OS toast is suppressed
-    // (Windows dev-mode AUMID, denied permission, etc).
     let _ = app.emit(
         "reminder:fired",
         json!({ "reminder_id": reminder_id, "title": title, "due": due }),
@@ -196,6 +175,21 @@ fn should_fire(app: &AppHandle, reminder_id: &str, occurrence_id: &str) -> Resul
     }
 
     Ok(true)
+}
+
+/// Increment the reminder's notified_count (observability + reset-on-reschedule
+/// semantics). Best-effort — a failure here never blocks a notification.
+fn bump_notified_count(app: &AppHandle, reminder_id: &str) -> Result<(), String> {
+    if reminder_id.is_empty() {
+        return Ok(());
+    }
+    let state = app.state::<AppState>();
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.execute(
+        "UPDATE reminders SET notified_count = notified_count + 1 WHERE id = ?1",
+        rusqlite::params![reminder_id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Append a row to `notification_events` so fire/skip behaviour is auditable.

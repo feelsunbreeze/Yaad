@@ -8,19 +8,87 @@ use crate::db::AppState;
 use crate::parser;
 use honker::{QueueOpts, EnqueueOpts};
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// ── notification scheduling ───────────────────────────────────────────────────
 
-fn compute_run_at(now_s: i64, fire_at_s: i64) -> i64 {
-    if now_s >= fire_at_s {
-        return fire_at_s;
-    }
-
+/// Small, fast pseudo-random from a seed mixed with the current nanos. Used
+/// only to add humane jitter to nudge times — not security-sensitive.
+fn pseudo_rand(seed: u64) -> u64 {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos() as i64)
-        .unwrap_or(42);
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(0);
+    let mut x = seed ^ nanos.wrapping_mul(0x9E3779B97F4A7C15);
+    x ^= x >> 33;
+    x = x.wrapping_mul(0xff51afd7ed558ccd);
+    x ^= x >> 33;
+    x
+}
 
-    now_s + (nanos % (fire_at_s - now_s + 1))
+/// Compute the notification fire times (unix **seconds**) for a reminder.
+///
+/// The exact deadline always fires (`due = true`). Pre-deadline "nudges" are
+/// placed with a geometric cadence that tightens toward the deadline — nudge
+/// `j` lands at `T - window / 2^j` — so reminders escalate as the deadline
+/// approaches, mirroring how urgency actually rises. That's the "best time"
+/// formula: every nudge is a fraction of the *remaining* time, anchored to the
+/// deadline rather than scattered uniformly.
+///
+/// Then two humane constraints shape it:
+///   - `MIN_LEAD` (5s): a nudge never fires within 5 seconds of now, so a
+///     fresh capture/reschedule never "resurfaces" instantly.
+///   - `MIN_GAP` (30s): consecutive notifications (and the gap before the
+///     deadline) are never closer than 30s, so nothing arrives back-to-back.
+/// Any nudge that can't satisfy the constraints is dropped. Light jitter keeps
+/// the cadence from feeling robotic without ever creating a collision.
+///
+/// Returns `(run_at_s, is_due, attempt_index)` sorted ascending, deadline last.
+fn schedule_times(now_s: i64, fire_at_s: i64, frequency: u64) -> Vec<(i64, bool, u64)> {
+    const MIN_LEAD: i64 = 5;
+    const MIN_GAP: i64 = 30;
+
+    let deadline = fire_at_s.max(now_s);
+    let window = deadline - now_s;
+    let nudges = frequency.saturating_sub(1);
+
+    // Geometric candidates: T - window/2, T - window/4, T - window/8, …
+    let mut candidates: Vec<i64> = Vec::new();
+    if window > MIN_LEAD && nudges > 0 {
+        for j in 1..=nudges {
+            let shift = j.min(40) as u32;          // cap so 1<<shift can't overflow
+            let denom = 1_i64 << shift;            // 2^j
+            let seg = (window / denom).max(1);     // distance from the deadline
+            // symmetric jitter of up to ±(seg/6)
+            let jspan = (seg / 6).max(1);
+            let jitter = (pseudo_rand(seed_mix(now_s, j)) % (2 * jspan as u64 + 1)) as i64 - jspan;
+            candidates.push(deadline - seg + jitter);
+        }
+    }
+
+    candidates.sort_unstable();
+
+    let mut out: Vec<(i64, bool, u64)> = Vec::new();
+    // `last + MIN_GAP` is the earliest a nudge may land; seed it so the first
+    // nudge only needs to clear `now + MIN_LEAD`.
+    let mut last = now_s + MIN_LEAD - MIN_GAP;
+    let mut attempt: u64 = 1;
+    for t in candidates {
+        let mut tt = t;
+        if tt < now_s + MIN_LEAD { tt = now_s + MIN_LEAD; }
+        if tt < last + MIN_GAP { continue; }        // too close to the previous nudge
+        if tt > deadline - MIN_GAP { continue; }     // too close to the deadline itself
+        out.push((tt, false, attempt));
+        last = tt;
+        attempt += 1;
+    }
+
+    // The exact deadline always fires. attempt index = frequency keeps the
+    // framing rotation in worker.rs consistent.
+    out.push((deadline, true, frequency.max(1)));
+    out
+}
+
+fn seed_mix(now_s: i64, j: u64) -> u64 {
+    (now_s as u64).wrapping_mul(0x100000001b3) ^ j.wrapping_mul(0x9E3779B1)
 }
 
 /// Read the user's notification_frequency setting (>= 1). Defaults to 2.
@@ -39,19 +107,16 @@ fn notification_frequency(state: &State<'_, AppState>) -> u64 {
 /// The single, authoritative reschedule path used by both `snooze` (named
 /// presets) and `reschedule_at` (explicit timestamp from the edit modal).
 ///
-/// DB correctness — this is where editing/rescheduling used to be able to
-/// throw:
+/// DB correctness:
 ///   - `occurrences` has `UNIQUE(reminder_id, fire_at)`. Inserting a fresh
-///     occurrence at a time that already has a row (a prior *snoozed*
-///     occurrence, or rescheduling back to the same minute) raised a
-///     constraint error → the UI surfaced "couldn't reschedule".
-///   - Fix: cancel the current pending occurrence, then PURGE every snoozed
-///     row for this reminder AND any row already sitting at the new fire_at,
-///     in one statement, before inserting. Purged rows free their unique
-///     (reminder_id, fire_at) slot, and their still-queued honker jobs become
-///     harmless no-ops because `worker::should_fire()` treats a missing
-///     occurrence as "skip". Net: rescheduling to ANY time, any number of
-///     times, can never collide.
+///     occurrence at a time that already has a row raised a constraint error.
+///     Fix: cancel the pending occurrence, then PURGE every snoozed row + any
+///     row already at the new fire_at before inserting. Purged rows free their
+///     unique slot; their still-queued jobs become no-ops (worker.should_fire
+///     skips a missing occurrence).
+///   - `notified_count` resets to 0 so a rescheduled task receives its full
+///     fresh cycle of nudges (the column is added by an idempotent migration
+///     in db.rs).
 fn do_reschedule(
     state: &State<'_, AppState>,
     id: &str,
@@ -65,67 +130,47 @@ fn do_reschedule(
 
     let tx = state.honker_db.transaction().map_err(|e| e.to_string())?;
 
-    // Confirm the reminder exists + grab its title (also the error path if the
-    // id is stale — surfaces a clean message rather than a silent failure).
     let title: String = tx.query_row(
         "SELECT title FROM reminders WHERE id = ?1",
         rusqlite::params![id],
         |r| r.get(0),
     ).map_err(|_| "reminder no longer exists".to_string())?;
 
-    // Cancel the current pending occurrence.
     tx.execute(
         "UPDATE occurrences SET state='snoozed', resolved_at=?1
          WHERE reminder_id=?2 AND state='pending'",
         rusqlite::params![db_now, id],
     ).map_err(|e| e.to_string())?;
 
-    // Purge snoozed rows + anything occupying the target fire_at slot, so the
-    // insert below can never trip UNIQUE(reminder_id, fire_at).
     tx.execute(
         "DELETE FROM occurrences
          WHERE reminder_id=?1 AND (state='snoozed' OR fire_at=?2)",
         rusqlite::params![id, fire_at_ms],
     ).map_err(|e| e.to_string())?;
 
-    // Fresh pending occurrence at the new time.
     tx.execute(
         "INSERT INTO occurrences (id, reminder_id, fire_at, state, human_time)
          VALUES (?1, ?2, ?3, 'pending', ?4)",
         rusqlite::params![occ_id, id, fire_at_ms, human],
     ).map_err(|e| e.to_string())?;
 
-    // Re-activate the reminder (covers rescheduling a completed task) and reset count.
+    // Re-activate + reset the notified counter for a clean fresh cycle.
     tx.execute(
         "UPDATE reminders SET status='active', updated_at=?1, completed_at=NULL, notified_count=0 WHERE id=?2",
         rusqlite::params![db_now, id],
     ).map_err(|e| e.to_string())?;
 
     let q = state.honker_db.queue("due_reminders", QueueOpts::default());
-
-    // Exact-deadline job (due: true → due_now.wav on fire).
-    let mut exact_opts = EnqueueOpts::default();
-    exact_opts.run_at = Some(fire_at_s);
-    q.enqueue_tx(&tx, &json!({
-        "reminder_id":   id,
-        "occurrence_id": occ_id,
-        "title":         title,
-        "human_time":    human,
-        "attempt":       frequency,
-        "due":           true,
-    }), exact_opts).map_err(|e| e.to_string())?;
-
-    // Random pre-deadline nudges (due: false → random notify tone).
-    for i in 1..frequency {
+    for (run_at, due, attempt) in schedule_times(db_now / 1000, fire_at_s, frequency) {
         let mut opts = EnqueueOpts::default();
-        opts.run_at = Some(compute_run_at(db_now / 1000, fire_at_s));
+        opts.run_at = Some(run_at);
         q.enqueue_tx(&tx, &json!({
             "reminder_id":   id,
             "occurrence_id": occ_id,
             "title":         title,
             "human_time":    human,
-            "attempt":       i,
-            "due":           false,
+            "attempt":       attempt,
+            "due":           due,
         }), opts).map_err(|e| e.to_string())?;
     }
 
@@ -135,9 +180,6 @@ fn do_reschedule(
 
 // ── serialisable view types ──────────────────────────────────────────────────
 
-/// Wire shape returned to the frontend. Mirrors the contract documented in
-/// the IPC summary — adding fields is fine, removing/renaming them is a
-/// breaking change for `useReminders.ts`.
 #[derive(Debug, Serialize, Clone)]
 pub struct ReminderView {
     pub id: String,
@@ -147,8 +189,6 @@ pub struct ReminderView {
     pub created_at: i64,
     pub fire_at: Option<i64>,
     pub human_time: Option<String>,
-    /// Populated for completed reminders so the UI can render
-    /// "resolved 2h ago" without confusing `fire_at` and `completed_at`.
     pub completed_at: Option<i64>,
 }
 
@@ -184,8 +224,6 @@ pub fn capture_submit(
         rusqlite::params![reminder_id, parsed.title, now, local_tz_id()],
     ).map_err(|e| e.to_string())?;
 
-    // Store human_time alongside the occurrence so list_reminders can
-    // round-trip it back to the UI without re-parsing.
     tx.execute(
         "INSERT INTO occurrences (id, reminder_id, fire_at, state, human_time)
          VALUES (?1, ?2, ?3, 'pending', ?4)",
@@ -193,32 +231,16 @@ pub fn capture_submit(
     ).map_err(|e| e.to_string())?;
 
     let q = state.honker_db.queue("due_reminders", QueueOpts::default());
-
-    // Enqueue the exact deadline job. `due: true` tells the worker (and via it
-    // the frontend) this is the real "due now" moment → play due_now.wav.
-    let mut exact_opts = EnqueueOpts::default();
-    exact_opts.run_at = Some(fire_at_s);
-    q.enqueue_tx(&tx, &json!({
-        "reminder_id":   reminder_id,
-        "occurrence_id": occ_id,
-        "title":         parsed.title,
-        "human_time":    parsed.human_time,
-        "attempt":       frequency,
-        "due":           true,
-    }), exact_opts).map_err(|e| e.to_string())?;
-
-    // Enqueue random pre-deadline nudges. `due: false` → frontend plays a
-    // random notify tone, not the due_now sound.
-    for i in 1..frequency {
+    for (run_at, due, attempt) in schedule_times(now / 1000, fire_at_s, frequency) {
         let mut opts = EnqueueOpts::default();
-        opts.run_at = Some(compute_run_at(now / 1000, fire_at_s));
+        opts.run_at = Some(run_at);
         q.enqueue_tx(&tx, &json!({
             "reminder_id":   reminder_id,
             "occurrence_id": occ_id,
             "title":         parsed.title,
             "human_time":    parsed.human_time,
-            "attempt":       i,
-            "due":           false,
+            "attempt":       attempt,
+            "due":           due,
         }), opts).map_err(|e| e.to_string())?;
     }
 
@@ -288,23 +310,15 @@ pub fn complete(
          WHERE reminder_id=?2 AND state='pending'",
         rusqlite::params![now, id],
     ).map_err(|e| e.to_string())?;
-    // The corresponding honker job stays in the queue but the worker's
-    // `should_fire()` pre-check looks at reminders.status / occurrences.state
-    // and skips firing for resolved rows — so the toast won't surface even
-    // if the queued job is claimed after this point.
     Ok(())
 }
 
 // ── snooze (named presets) ────────────────────────────────────────────────────
-//
-// Kept for the quick named presets. Computes a concrete fire time, then hands
-// off to `do_reschedule` so the occurrence-swap + enqueue logic lives in
-// exactly one place.
 #[tauri::command]
 pub fn snooze(
     state: State<'_, AppState>,
     id: String,
-    preset: String,       // "1h" | "tonight" | "tomorrow" | "next_week" | <natural language>
+    preset: String,
 ) -> Result<String, String> {
     use chrono::{Local, Duration, TimeZone, NaiveTime};
 
@@ -352,12 +366,6 @@ pub fn snooze(
 }
 
 // ── reschedule_at (explicit timestamp from the edit modal) ─────────────────────
-//
-// The edit modal computes the target time on the frontend (named presets,
-// ± delta chips relative to the current fire time, or parsed natural language)
-// and sends the absolute millisecond timestamp + a human label. The backend is
-// the single source of truth for storage; it does not re-parse, so there is no
-// chance of frontend/backend drift.
 #[tauri::command]
 pub fn reschedule_at(
     state: State<'_, AppState>,
@@ -370,11 +378,6 @@ pub fn reschedule_at(
 }
 
 // ── test_notification ────────────────────────────────────────────────────────
-//
-// Dispatches a real OS-level toast through tauri-plugin-notification:
-//   Windows 11 → WinRT ToastNotificationManager → Action Center
-//   macOS      → UNUserNotificationCenter
-//   Linux      → libnotify over DBus (notify-send / libnotify-bin required)
 #[tauri::command]
 pub fn test_notification(app: AppHandle) -> Result<(), String> {
     let granted = ensure_permission(&app)?;
@@ -394,7 +397,6 @@ pub fn test_notification(app: AppHandle) -> Result<(), String> {
 }
 
 /// Check permission state, requesting it from the OS if it's still Unknown.
-/// Returns true when the OS will accept toasts from this app.
 pub(crate) fn ensure_permission(app: &AppHandle) -> Result<bool, String> {
     let state = app
         .notification()
@@ -423,11 +425,6 @@ pub fn list_completed(state: State<'_, AppState>, limit: Option<u32>, offset: Op
     let lim = limit.unwrap_or(10);
     let off = offset.unwrap_or(0);
 
-    // For completed reminders, surface BOTH the original fire_at (last
-    // pending occurrence) and the completed_at separately. Previously the
-    // query packed completed_at into the fire_at slot which made the UI
-    // think the reminder fired in the past — fine for sorting, misleading
-    // for display.
     let mut stmt = db.prepare(
         "SELECT r.id, r.title, r.status, r.priority, r.created_at, r.completed_at,
                 (SELECT fire_at FROM occurrences
@@ -470,16 +467,10 @@ pub fn count_completed(state: State<'_, AppState>) -> Result<u32, String> {
 
 // ── tz helper ────────────────────────────────────────────────────────────────
 
-/// Best-effort IANA tz identifier for the running machine. Falls back to
-/// "local" when we can't read it — the field is stored for future use
-/// (e.g. correctly scheduling across travel) and isn't load-bearing yet.
 fn local_tz_id() -> String {
     iana_time_zone_get().unwrap_or_else(|| "local".to_string())
 }
 
-/// Pulled out so the surrounding helper stays unit-testable. Uses chrono's
-/// platform-specific local offset as a coarse fingerprint when no real
-/// tz crate is available.
 fn iana_time_zone_get() -> Option<String> {
     let offset = chrono::Local::now().offset().to_string();
     Some(format!("local{offset}"))
@@ -522,8 +513,6 @@ pub fn factory_reset(state: State<'_, AppState>) -> Result<(), String> {
          DELETE FROM reminders;
          DELETE FROM settings;"
     ).map_err(|e| e.to_string())?;
-    // The occurrences are gone, so any honker jobs still in the queue become
-    // no-ops (worker's should_fire skips when the occurrence/reminder is gone).
     Ok(())
 }
 

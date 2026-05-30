@@ -116,37 +116,43 @@ export function SnoozeModal(props: SnoozeModalProps) {
     }
   });
 
-  // Debounced parse for the live preview — relative shift first, else backend NL.
+  // Live preview parse. Unlike the main capture bar, the reschedule modal does
+  // NOT impose a 3-character minimum — short inputs like "5pm" or "+2h" preview
+  // immediately. We instead suppress only low-confidence fallback guesses, so
+  // the "will surface …" line never shows noise.
   createEffect(() => {
-    const text = value();
+    const trimmed = value().trim();
     clearTimeout(debounceTimer);
 
-    if (text.trim().length < 2) {
+    if (!trimmed) {
       setParsedText("");
       setLastParsed(null);
       return;
     }
 
-    const rel = parseRelative(text, props.currentFireAt ?? Date.now());
+    // Relative shift (+/-) resolves instantly off the current fire time.
+    const rel = parseRelative(trimmed, props.currentFireAt ?? Date.now());
     if (rel) {
       setParsedText(rel.preview);
       setLastParsed({ ms: rel.ms, human: rel.human });
       return;
     }
 
-    if (text.trim().length < 3) {
-      setParsedText("");
-      setLastParsed(null);
-      return;
-    }
-
     debounceTimer = window.setTimeout(async () => {
       try {
-        const res = await invoke<{ fire_at_ms: number; human_time: string }>("parse_time", {
-          raw: text,
-        });
-        setParsedText(res.human_time);
-        setLastParsed({ ms: res.fire_at_ms, human: res.human_time });
+        const res = await invoke<{ fire_at_ms: number; human_time: string; confidence: number }>(
+          "parse_time",
+          { raw: trimmed },
+        );
+        // Only surface confident parses — a low-confidence fallback (e.g. a
+        // lone digit) would otherwise read as a real time.
+        if (res.confidence >= 0.5) {
+          setParsedText(res.human_time);
+          setLastParsed({ ms: res.fire_at_ms, human: res.human_time });
+        } else {
+          setParsedText("");
+          setLastParsed(null);
+        }
       } catch (e) {
         console.error("Parse error", e);
       }

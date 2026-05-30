@@ -18,7 +18,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# tray-icon: required for the system-tray / close-to-background behavior.
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -27,5 +28,7 @@ rusqlite = { version = "0.39.0", features = ["bundled"] }
 chrono = { version = "0.4.39", features = ["serde"] }
 ulid = { version = "1.1.4", features = ["serde"] }
 tokio = { version = "1.43", features = ["rt-multi-thread", "macros"] }
-tauri-plugin-notification = "2.0.0"
+# Bumped off the pinned 2.0.0 (which had the weak Windows install-detection
+# that falls back to the PowerShell AppUserModelID) to the latest 2.x.
+tauri-plugin-notification = "2"
 regex = "1.12.3"

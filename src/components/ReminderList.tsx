@@ -3,6 +3,7 @@ import type { Reminder, Tab } from "@/lib/types";
 import { ReminderCard } from "./ReminderCard";
 import { SmileIcon, SortTimeIcon } from "./icons";
 import { playSfx } from "@/lib/audio";
+import confetti from "canvas-confetti";
 
 const SECTION_LABEL: Record<Tab, string> = {
   today: "to do",
@@ -228,8 +229,6 @@ export function ReminderList(props: ReminderListProps) {
   }
 
   async function triggerConfetti() {
-    const confetti = (await import('canvas-confetti')).default;
-
     playSfx("allDone");
 
     await new Promise(r => setTimeout(r, 150));

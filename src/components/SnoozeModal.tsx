@@ -5,6 +5,7 @@ import { ParseToken } from "./ParseToken";
 
 export interface SnoozeModalProps {
   isOpen: boolean;
+  taskTitle: string;
   onClose: () => void;
   onSubmit: (preset: string) => void;
 }
@@ -79,10 +80,9 @@ export function SnoozeModal(props: SnoozeModalProps) {
       </header>
 
       <div class="settings-section">
-        <label>Resurface this later</label>
-        <p class="settings-desc">
-          Type any natural language date or time phrase, or pick a preset below.
-        </p>
+        <Show when={props.taskTitle}>
+          <p class="snooze-task-title">"{props.taskTitle}"</p>
+        </Show>
 
         <div class="snooze-input-wrap">
           <input

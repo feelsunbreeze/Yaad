@@ -29,6 +29,8 @@ export interface ReminderListProps {
   shakingTaskId?: string | null;
   /** Callback to load more completed tasks */
   onLoadMore?: () => void;
+  /** Active snooze departure animation state */
+  snoozeDeparting?: { id: string; direction: "left" | "right" } | null;
 }
 
 /**
@@ -305,6 +307,11 @@ export function ReminderList(props: ReminderListProps) {
                 onSnoozeRequest={props.onSnoozeRequest}
                 suppressRise={autoSwitch()}
                 isShaking={props.shakingTaskId === r.id}
+                snoozeDeparting={
+                  props.snoozeDeparting?.id === r.id
+                    ? props.snoozeDeparting.direction
+                    : undefined
+                }
               />
             )}
           </For>

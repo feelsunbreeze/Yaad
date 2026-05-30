@@ -66,7 +66,7 @@ export default function App() {
 
   const [userName, setUserName] = createSignal<string | null>(null);
   const [timeFormat, setTimeFormat] = createSignal<string>("12h");
-  const [snoozeReminderId, setSnoozeReminderId] = createSignal<string | null>(null);
+  const [snoozeReminder, setSnoozeReminder] = createSignal<{ id: string; title: string } | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = createSignal(false);
   const [loadingInitial, setLoadingInitial] = createSignal(true);
 
@@ -205,20 +205,25 @@ export default function App() {
         reminders={r.visible()}
         tab={r.tab()}
         onToggle={r.toggleDone}
-        onSnoozeRequest={setSnoozeReminderId}
+        onSnoozeRequest={(id) => {
+          const rem = r.visible().find(x => x.id === id);
+          if (rem) setSnoozeReminder({ id, title: rem.title });
+        }}
         shakingTaskId={r.shakingTaskId()}
         onLoadMore={r.loadMoreCompleted}
+        snoozeDeparting={r.snoozeDeparting()}
       />
 
       <SnoozeModal
-        isOpen={snoozeReminderId() !== null}
-        onClose={() => setSnoozeReminderId(null)}
+        isOpen={snoozeReminder() !== null}
+        taskTitle={snoozeReminder()?.title ?? ""}
+        onClose={() => setSnoozeReminder(null)}
         onSubmit={(preset) => {
-          const id = snoozeReminderId();
-          if (id) {
-            r.snoozeReminder(id, preset);
+          const s = snoozeReminder();
+          if (s) {
+            r.snoozeReminder(s.id, preset);
           }
-          setSnoozeReminderId(null);
+          setSnoozeReminder(null);
         }}
       />
 

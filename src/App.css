@@ -595,8 +595,97 @@ body::before {
   color: var(--text-soft);
 }
 
+.reminder-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.reminder-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-main);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .reminder-card.snooze-open {
   z-index: 10;
+}
+
+/* ── SNOOZE DEPARTURE ─────────────────────────────────── */
+/* When a card is rescheduled to a later tab it slides out left;
+   when rescheduled to an earlier tab it slides out right.
+   After the slide-out, the card collapses its layout space. */
+.reminder-card.snooze-depart-left {
+  pointer-events: none;
+  animation:
+    snooze-slide-left 350ms cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards,
+    card-collapse 300ms var(--ease-smooth) 300ms forwards;
+}
+
+.reminder-card.snooze-depart-right {
+  pointer-events: none;
+  animation:
+    snooze-slide-right 350ms cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards,
+    card-collapse 300ms var(--ease-smooth) 300ms forwards;
+}
+
+@keyframes snooze-slide-left {
+  0% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-60px);
+    opacity: 0;
+  }
+}
+
+@keyframes snooze-slide-right {
+  0% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(60px);
+    opacity: 0;
+  }
+}
+
+/* Incoming card on the receiving tab — slides in from the opposite side */
+.reminder-card.snooze-arrive-left {
+  animation: snooze-arrive-from-left 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+.reminder-card.snooze-arrive-right {
+  animation: snooze-arrive-from-right 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@keyframes snooze-arrive-from-left {
+  0% {
+    transform: translateX(-40px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes snooze-arrive-from-right {
+  0% {
+    transform: translateX(40px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 /* ── COMPLETION SEQUENCE ───────────────────────────────── */
@@ -1223,40 +1312,59 @@ body::before {
   }
 }
 
-/* ── SNOOZE AFFORDANCE ─────────────────────────────────── */
-.action-btn {
+/* ── RESCHEDULE PENCIL BUTTON ─────────────────────────── */
+.reschedule-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
   background: transparent;
-  border: 1px solid var(--cream-3);
-  color: var(--text-soft);
-  padding: 0.2rem 0.55rem;
-  border-radius: 99px;
-  font-family: var(--font-body);
-  font-size: 0.66rem;
-  font-weight: 400;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  transition:
-    background 0.2s var(--ease-snap),
-    border-color 0.2s var(--ease-snap),
-    color 0.2s var(--ease-snap),
-    transform 0.22s var(--ease-spring);
-}
-
-.action-btn:hover {
-  background: var(--cream-2);
-  border-color: var(--warm-mid);
-  color: var(--text-mute);
-  transform: scale(1.04);
-}
-
-.action-btn:active {
-  transform: scale(0.96);
-}
-
-.snooze-wrap {
-  position: relative;
   display: flex;
   align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--warm-mid);
+  opacity: 0;
+  transition:
+    opacity 0.2s var(--ease-snap),
+    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+    background 0.2s var(--ease-snap),
+    color 0.2s var(--ease-snap);
+}
+
+.reminder-card:hover .reschedule-btn,
+.reminder-card:focus-visible .reschedule-btn {
+  opacity: 1;
+}
+
+.reschedule-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.reschedule-btn:hover {
+  background: var(--cream-2);
+  color: var(--amber);
+}
+
+.reschedule-btn:hover svg {
+  transform: rotate(15deg);
+}
+
+.reschedule-btn:active {
+  transform: scale(0.82);
+}
+
+.reschedule-btn:active svg {
+  transform: rotate(15deg) scale(0.9);
 }
 
 .snooze-popover {
@@ -2095,4 +2203,22 @@ body::before {
 .titlebar-btn.minimize:hover {
   background: rgba(184, 146, 74, 0.12);
   color: var(--amber);
+}
+
+/* ── SNOOZE MODAL TASK TITLE ──────────────────────────── */
+.snooze-task-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-main);
+  font-style: italic;
+  margin: 0 0 0.85rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--cream-2);
+  border-radius: 8px;
+  border-left: 2.5px solid var(--amber);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  display: block;
 }

@@ -93,6 +93,7 @@ export function useReminders() {
   const [completedOffset, setCompletedOffset] = createSignal(0);
   const [hasMoreCompleted, setHasMoreCompleted] = createSignal(true);
   const [backendDoneCount, setBackendDoneCount] = createSignal(0);
+  const [snoozeDeparting, setSnoozeDeparting] = createSignal<{ id: string; direction: "left" | "right" } | null>(null);
   let isLoadingMore = false;
 
   // ── Derived ─────────────────────────────────────────────────────────────
@@ -220,8 +221,21 @@ export function useReminders() {
 
   async function snoozeReminder(id: string, preset: SnoozePreset): Promise<void> {
     try {
+      // Determine the current bucket so we know which direction to slide
+      const currentReminder = reminders.find(r => r.id === id);
+      const currentBucket = currentReminder?.bucket ?? "today";
+
       await invoke("snooze", { id, preset });
       playSfx("snooze");
+
+      // Snoozing usually pushes a task later → slide left.
+      // If it somehow moves earlier (rare), slide right.
+      const direction = currentBucket === "upcoming" ? "right" : "left";
+      setSnoozeDeparting({ id, direction });
+
+      // Wait for the slide-out + collapse animation before refreshing
+      await new Promise(r => setTimeout(r, 600));
+      setSnoozeDeparting(null);
       await loadReminders();
     } catch (e) {
       console.error("snooze failed:", e);
@@ -305,6 +319,7 @@ export function useReminders() {
     snoozeReminder,
     loadReminders,
     shakingTaskId,
+    snoozeDeparting,
     hasMoreCompleted,
     loadMoreCompleted,
   };

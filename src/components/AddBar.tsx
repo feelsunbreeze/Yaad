@@ -30,7 +30,7 @@ export function AddBar(props: AddBarProps) {
 
   createEffect(() => {
     const text = value();
-    
+
     // Always clear the old timer first so we don't get stale updates!
     clearTimeout(debounceTimer);
 
@@ -67,7 +67,7 @@ export function AddBar(props: AddBarProps) {
         <input
           class="add-input"
           type="text"
-          placeholder="remind me to…"
+          placeholder="remind me to… (/)"
           autocomplete="off"
           spellcheck={false}
           value={value()}

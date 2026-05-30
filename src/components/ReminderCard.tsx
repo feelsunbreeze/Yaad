@@ -1,6 +1,6 @@
 import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import type { Reminder } from "@/lib/types";
-import { CheckIcon, ClockIcon } from "./icons";
+import { CheckIcon, ClockIcon, PencilIcon } from "./icons";
 import { formatResolvedAgo, formatRelativeLive } from "@/lib/date";
 import { playSfx } from "@/lib/audio";
 
@@ -10,6 +10,7 @@ export interface ReminderCardProps {
   onSnoozeRequest: (id: string) => void;
   isShaking?: boolean;
   suppressRise?: boolean;
+  snoozeDeparting?: "left" | "right";
 }
 
 /**
@@ -75,6 +76,7 @@ export function ReminderCard(props: ReminderCardProps) {
     if (isCompleting()) classes.push("completing");
     if (suppressRiseOnMount) classes.push("no-rise");
     if (props.isShaking) classes.push("shaking");
+    if (props.snoozeDeparting) classes.push(`snooze-depart-${props.snoozeDeparting}`);
     return classes.join(" ");
   };
 
@@ -160,22 +162,19 @@ export function ReminderCard(props: ReminderCardProps) {
         </Show>
       </div>
 
-      <div class="reminder-right">
-        <Show when={showSnooze()}>
-          <div class="snooze-wrap" onClick={e => e.stopPropagation()}>
-            <button
-              type="button"
-              class="action-btn"
-              onClick={e => {
-                e.stopPropagation();
-                props.onSnoozeRequest?.(props.reminder.id);
-              }}
-            >
-              later
-            </button>
-          </div>
-        </Show>
-      </div>
+      <Show when={showSnooze()}>
+        <button
+          type="button"
+          class="reschedule-btn"
+          aria-label="Reschedule"
+          onClick={e => {
+            e.stopPropagation();
+            props.onSnoozeRequest?.(props.reminder.id);
+          }}
+        >
+          <PencilIcon />
+        </button>
+      </Show>
     </div>
   );
 }

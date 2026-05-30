@@ -1545,6 +1545,33 @@ body::before {
   max-height: calc(100vh - 4.5rem);
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* Themed scrollbar (Firefox) — warm thumb, no track chrome. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--warm-mid) transparent;
+}
+
+/* Themed scrollbar (Chromium/WebKit) — a slim amber-warm thumb that matches
+   the app instead of the OS-default grey bar. */
+.modal-content::-webkit-scrollbar {
+  width: 7px;
+}
+
+.modal-content::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 0.75rem 0;
+}
+
+.modal-content::-webkit-scrollbar-thumb {
+  background: var(--warm-mid);
+  border-radius: 99px;
+  /* inset the thumb so it reads as a slim pill, not a full-width bar */
+  border: 2px solid rgba(255, 253, 248, 0.96);
+  background-clip: padding-box;
+}
+
+.modal-content::-webkit-scrollbar-thumb:hover {
+  background: var(--amber);
+  background-clip: padding-box;
 }
 
 @keyframes modal-in {
@@ -1831,20 +1858,9 @@ body::before {
   opacity: 1;
 }
 
-.onboarding-content h1 {
-  font-family: var(--font-display);
-  font-size: 2.5rem;
-  font-weight: 500;
-  color: var(--brown-2);
-  margin-bottom: 0.5rem;
-}
-
-.onboarding-content p {
-  font-family: var(--font-body);
-  font-size: 1rem;
-  color: var(--text-mute);
-  margin-bottom: 2rem;
-}
+/* Onboarding headings/flavor now use .ob-title / .ob-flavor (see the
+   ONBOARDING block below). The old bare h1/p rules were removed so they don't
+   out-specify the new step styles. */
 
 .onboarding-input-wrap {
   display: flex;
@@ -2089,7 +2105,7 @@ body::before {
 }
 
 .snooze-preview {
-  margin-top: 0.65rem;
+  margin-top: 0.5rem;
   font-family: var(--font-body);
   font-size: 0.78rem;
   color: var(--text-mute);
@@ -2101,8 +2117,7 @@ body::before {
 .snooze-presets-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 0.6rem;
-  margin-top: 0.5rem;
+  gap: 0.4rem;
 }
 
 .preset-pill-btn {
@@ -2112,10 +2127,10 @@ body::before {
   justify-content: center;
   background: var(--cream-2);
   border: 1.5px solid var(--cream-3);
-  border-radius: 12px;
-  padding: 0.7rem;
+  border-radius: 11px;
+  padding: 0.5rem;
   font-family: var(--font-body);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 500;
   color: var(--brown);
   cursor: pointer;
@@ -2137,10 +2152,10 @@ body::before {
 }
 
 .preset-desc {
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 400;
   color: var(--text-soft);
-  margin-top: 0.15rem;
+  margin-top: 0.1rem;
 }
 
 /* ── CUSTOM TITLEBAR ────────────────────────────────────── */
@@ -2222,12 +2237,12 @@ body::before {
 
 /* ── SNOOZE MODAL TASK TITLE ──────────────────────────── */
 .snooze-task-title {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 500;
   color: var(--text-main);
   font-style: italic;
-  margin: 0 0 0.85rem;
-  padding: 0.5rem 0.75rem;
+  margin: 0 0 0.7rem;
+  padding: 0.45rem 0.7rem;
   background: var(--cream-2);
   border-radius: 8px;
   border-left: 2.5px solid var(--amber);
@@ -2237,39 +2252,48 @@ body::before {
   max-width: 100%;
   display: block;
 }
+
+.reschedule-header {
+  margin-bottom: 0.9rem;
+}
 /* ── RESCHEDULE MODAL: ± DELTA CHIPS ───────────────────── */
 .reschedule-adjust {
-  margin-top: 1rem;
+  margin-top: 0.8rem;
+}
+
+.reschedule-adjust-last {
+  margin-bottom: 0;
 }
 
 .reschedule-label {
   display: block;
   font-family: var(--font-body);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 500;
   color: var(--text-mute);
-  margin-bottom: 0.45rem;
+  margin-bottom: 0.4rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
 }
 
 .delta-row {
-  display: flex;
-  gap: 0.4rem;
-  flex-wrap: wrap;
+  /* Symmetric 6-up — three sooner, three later, all equal width on one row.
+     No wrap, no orphan stretched chip. */
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.3rem;
 }
 
 .delta-chip {
-  flex: 1 1 auto;
-  min-width: 3rem;
-  padding: 0.45rem 0.3rem;
-  border-radius: 10px;
+  min-width: 0;
+  padding: 0.4rem 0.1rem;
+  border-radius: 9px;
   border: 1.5px solid var(--cream-3);
   background: var(--cream-2);
   font-family: var(--font-body);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
   color: var(--text-mute);
   cursor: pointer;
   transition:
@@ -2352,6 +2376,192 @@ body::before {
   .reschedule-btn:hover svg,
   .reminder-card.rescheduled,
   .reminder-card.rescheduled .meta-time {
+    animation: none !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   ONBOARDING — sequential, one question at a time
+   ══════════════════════════════════════════════════════════ */
+.ob-card {
+  position: relative;
+  max-width: 380px;
+}
+
+.ob-wordmark {
+  font-family: var(--font-body);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.34em;
+  color: var(--text-soft);
+  opacity: 0.7;
+  margin-bottom: 1.75rem;
+}
+
+/* Per-step transition: graceful rise-in, accelerate-out on advance. */
+.ob-step {
+  min-height: 215px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  animation: ob-step-in 0.5s var(--ease-decel) both;
+}
+
+.ob-step.leaving {
+  animation: ob-step-out 0.24s var(--ease-accel) forwards;
+}
+
+@keyframes ob-step-in {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ob-step-out {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-14px); }
+}
+
+.ob-eyebrow {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--amber-2);
+  margin-bottom: 0.6rem;
+}
+
+.ob-title {
+  font-family: var(--font-display);
+  font-size: 1.9rem;
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--brown-2);
+  letter-spacing: -0.02em;
+  margin: 0 0 0.6rem;
+}
+
+.ob-flavor {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: var(--text-mute);
+  margin: 0 0 1.6rem;
+  min-height: 2.6em;
+}
+
+.ob-seg-sub {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 400;
+  opacity: 0.6;
+  margin-top: 2px;
+}
+
+.ob-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1.5rem;
+}
+
+.ob-back {
+  background: transparent;
+  border: none;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-soft);
+  cursor: pointer;
+  padding: 0.5rem 0.4rem;
+  border-radius: 8px;
+  transition: color 0.2s var(--ease-snap), transform 0.2s var(--ease-spring);
+}
+
+.ob-back:hover {
+  color: var(--text-mute);
+  transform: translateX(-2px);
+}
+
+.ob-primary {
+  background: var(--amber);
+  border: none;
+  color: var(--cream);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 0.65rem 1.5rem;
+  border-radius: 12px;
+  cursor: pointer;
+  transition:
+    background 0.22s var(--ease-snap),
+    transform 0.24s var(--ease-spring),
+    box-shadow 0.22s var(--ease-snap);
+}
+
+.ob-primary:hover {
+  background: var(--amber-2);
+  transform: scale(1.04);
+  box-shadow: 0 5px 16px -4px rgba(184, 146, 74, 0.5);
+}
+
+.ob-primary:active {
+  transform: scale(0.96);
+}
+
+.ob-begin {
+  padding-left: 2rem;
+  padding-right: 2rem;
+}
+
+.ob-freq {
+  margin-top: 0.5rem;
+}
+
+.ob-freq-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  font-family: var(--font-body);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-soft);
+}
+
+/* Progress dots */
+.ob-dots {
+  display: flex;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-top: 2rem;
+}
+
+.ob-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--cream-3);
+  transition:
+    width 0.4s var(--ease-spring),
+    background 0.4s var(--ease-snap);
+}
+
+.ob-dot.done {
+  background: var(--warm-mid);
+}
+
+.ob-dot.active {
+  width: 22px;
+  background: var(--amber);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ob-step,
+  .ob-step.leaving {
     animation: none !important;
   }
 }

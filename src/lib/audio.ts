@@ -1,33 +1,29 @@
 /**
- * Yaad's audio engine.
+ * Yaad's audio engine (Web Audio API).
  *
- * ── Why Web Audio and not `new Audio()` ──────────────────────────────────────
- * The previous implementation used HTML `<audio>` elements (`new Audio(url)`)
- * and `.cloneNode()` per play. That has a fatal flaw for an app like this:
- * when nothing has played for a while, the WebView's audio OUTPUT SINK goes to
- * sleep (the OS releases the device). The next `.play()` has to spin the device
- * back up, and the attack of the first sound is dropped or clipped — exactly
- * the "first interaction after idle plays nothing" bug. For a reminder app the
- * single most important sound (a notification firing an hour after you set it)
- * is ALWAYS the first sound after a long idle, so it was the one most reliably
- * swallowed.
+ * ── The bug this is designed to avoid ────────────────────────────────────────
+ * An AudioContext created outside a user gesture starts `suspended`. The fatal
+ * mistake is to call `source.start()` while it's still suspended (or mid-resume)
+ * — the one-shot is silently dropped, so the FIRST sounds after launch never
+ * play, and things only "wake up" once some later sound happens to fire after
+ * the context finished resuming. To prevent that, `playSfx` NEVER starts a
+ * source until the context is actually `running`: if it isn't, we `resume()`
+ * first and play in the `.then()`.
  *
- * The Web Audio API fixes this cleanly:
- *   1. Each clip is decoded ONCE into an AudioBuffer (no per-play decode, no
- *      element churn, no GC pressure).
- *   2. A continuous, inaudible keep-alive source holds the output device open
- *      so it never sleeps — the first "real" sound after any idle is instant
- *      and complete.
- *   3. Every play resumes the context first (covers the window-hidden /
- *      OS-suspended case when a reminder fires while minimised).
+ * Pieces:
+ *   1. Each clip is decoded ONCE into an AudioBuffer (no per-play decode).
+ *   2. A user-gesture `unlock()` that RETRIES on every gesture until the
+ *      context truly reaches `running` (a single `{ once: true }` listener is
+ *      the trap — if the first resume hasn't resolved, you've lost your only
+ *      shot).
+ *   3. A continuous, inaudible keep-alive source that holds the output device
+ *      open so it never sleeps — the first sound after any idle is instant.
  *
- * Mute: a single in-memory flag, driven from the persisted `sound_enabled`
- * setting (App reads it on mount; Settings + Onboarding toggle it live). When
- * muted, `playSfx` early-returns before creating any source. The silent
- * keep-alive still runs (it's inaudible anyway) so unmuting is instant.
+ * Mute: a single in-memory flag, driven by the persisted `sound_enabled`
+ * setting. When muted, `playSfx` early-returns before creating any source.
  *
- * The exported surface (`playSfx`, `playRandomNotify`) is unchanged, so call
- * sites don't need to know any of this.
+ * The exported surface (`playSfx`, `playRandomNotify`, `setSfxMuted`,
+ * `isSfxMuted`) is unchanged, so call sites don't need to know any of this.
  */
 
 import addTaskSfx from "../assets/sfx/add_task.wav";
@@ -102,8 +98,7 @@ function ensureContext(): AudioContext | null {
 }
 
 /** Decode every clip into an AudioBuffer exactly once. Fired eagerly at module
- *  load so buffers are warm by the time the user first interacts; safe to call
- *  again (guarded by `decodeStarted`). */
+ *  load so buffers are warm by the time the user first interacts. */
 async function decodeAll(): Promise<void> {
   const c = ensureContext();
   if (!c || decodeStarted) return;
@@ -114,8 +109,7 @@ async function decodeAll(): Promise<void> {
       try {
         const res = await fetch(SOURCES[name]);
         const arr = await res.arrayBuffer();
-        // decodeAudioData works while the context is suspended.
-        const buf = await c.decodeAudioData(arr);
+        const buf = await c.decodeAudioData(arr); // works while suspended
         buffers.set(name, buf);
       } catch (e) {
         console.warn(`[audio] failed to decode ${name}:`, e);
@@ -125,13 +119,12 @@ async function decodeAll(): Promise<void> {
 }
 
 /**
- * The keep-alive: a silent, looping one-second buffer routed through a
- * (near-)zero gain node. While it plays, the OS keeps the output device open,
- * so the first audible sound after any idle window fires instantly and
- * complete — no warm-up clip. Cost is negligible (a zero-amplitude buffer).
+ * The keep-alive: a silent, looping one-second buffer through a zero-gain node.
+ * While it plays, the OS keeps the output device open AND the context stays
+ * `running`, so every subsequent sound fires instantly with no warm-up clip.
  */
 function startKeepAlive(): void {
-  if (!ctx || !masterGain || keepAlive) return;
+  if (!ctx || keepAlive) return;
 
   const silent = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
   const source = ctx.createBufferSource();
@@ -139,15 +132,16 @@ function startKeepAlive(): void {
   source.loop = true;
 
   const gain = ctx.createGain();
-  gain.gain.value = 0; // truly inaudible — only there to hold the device open
+  gain.gain.value = 0;
   source.connect(gain).connect(ctx.destination);
-  source.start();
+  try {
+    source.start();
+  } catch {
+    /* already started or context not ready — harmless */
+  }
 
   keepAlive = { source, gain };
 
-  // Belt-and-braces: if the OS suspends the context anyway (window hidden,
-  // sleep), nudge it back awake periodically so a fire-while-minimised still
-  // produces sound the instant the event arrives.
   if (keepAliveTimer === undefined) {
     keepAliveTimer = window.setInterval(() => {
       if (ctx && ctx.state === "suspended") void ctx.resume();
@@ -155,82 +149,113 @@ function startKeepAlive(): void {
   }
 }
 
-/** Resume the context (no-op if already running). Browsers/WebViews require
- *  the first resume to follow a user gesture; after that it can be called
- *  programmatically, including from a notification-fired handler. */
-async function resume(): Promise<void> {
+/**
+ * Unlock on a user gesture. Registered WITHOUT `{ once: true }` and retried on
+ * every gesture until the context actually reaches `running` — only then do we
+ * detach. (The classic failure is a single once-listener that resumes before
+ * the gesture is honored, leaving the context suspended forever.)
+ */
+function unlock(): void {
+  const c = ensureContext();
+  if (!c) return;
+  void (async () => {
+    try {
+      if (c.state !== "running") await c.resume();
+    } catch {
+      /* not honored yet — a later gesture will retry */
+    }
+    await decodeAll();
+    if (c.state === "running") {
+      startKeepAlive();
+      detachUnlock();
+    }
+  })();
+}
+
+function detachUnlock(): void {
+  window.removeEventListener("pointerdown", unlock, true);
+  window.removeEventListener("mousedown", unlock, true);
+  window.removeEventListener("keydown", unlock, true);
+  window.removeEventListener("touchstart", unlock, true);
+}
+
+if (typeof window !== "undefined") {
+  // Decode ASAP so buffers are warm; decoding does not need a running context.
+  void decodeAll();
+
+  window.addEventListener("pointerdown", unlock, true);
+  window.addEventListener("mousedown", unlock, true);
+  window.addEventListener("keydown", unlock, true);
+  window.addEventListener("touchstart", unlock, true);
+
+  // Re-warm when the window regains focus (a reminder may have fired while the
+  // app was hidden and the OS suspended the context).
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) void resumeCtx();
+  });
+}
+
+/** Resume the context if suspended. */
+async function resumeCtx(): Promise<void> {
   const c = ensureContext();
   if (!c) return;
   if (c.state === "suspended") {
     try {
       await c.resume();
     } catch {
-      /* ignore — will retry on next play */
+      /* ignore */
     }
   }
-}
-
-/** First user gesture unlocks + warms the whole engine. */
-function unlock(): void {
-  void (async () => {
-    await resume();
-    await decodeAll();
-    startKeepAlive();
-  })();
-  window.removeEventListener("keydown", unlock, true);
-  window.removeEventListener("mousedown", unlock, true);
-  window.removeEventListener("touchstart", unlock, true);
-}
-
-if (typeof window !== "undefined") {
-  // Kick off decoding immediately so buffers are ready ASAP; the context may
-  // be suspended until the gesture, but decodeAudioData does not need it live.
-  void decodeAll();
-
-  window.addEventListener("keydown", unlock, { capture: true, once: true });
-  window.addEventListener("mousedown", unlock, { capture: true, once: true });
-  window.addEventListener("touchstart", unlock, { capture: true, once: true });
-
-  // Re-warm when the window regains focus (a reminder may have fired while the
-  // app was hidden and the context got suspended by the OS).
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) void resume();
-  });
 }
 
 /**
- * Play a one-shot sound effect. Safe to call before the engine is fully warm:
- * it resumes the context, and if the buffer hasn't decoded yet it falls back
- * to a lazy decode so nothing is silently lost.
+ * Play a one-shot sound effect.
+ *
+ * The critical ordering: a source is only ever started while the context is
+ * `running`. If it's still `suspended` (e.g. the very first sound right after
+ * launch, before the gesture-driven resume has resolved), we resume first and
+ * play in the `.then()` — so the sound is delayed by a few ms rather than
+ * silently dropped.
  */
 export function playSfx(name: SfxName): void {
   if (muted) return;
-
   const c = ensureContext();
   if (!c || !masterGain) return;
 
-  void resume();
-
-  const buf = buffers.get(name);
-  if (buf) {
-    fire(c, masterGain, buf);
-    return;
-  }
-
-  // Not decoded yet — decode just this one, then play.
-  void (async () => {
-    try {
-      const res = await fetch(SOURCES[name]);
-      const arr = await res.arrayBuffer();
-      const decoded = await c.decodeAudioData(arr);
-      buffers.set(name, decoded);
-      if (muted) return; // user muted while we were decoding
-      await resume();
-      fire(c, masterGain!, decoded);
-    } catch (e) {
-      console.warn(`[audio] playback failed for ${name}:`, e);
+  const play = () => {
+    if (muted) return;
+    const buf = buffers.get(name);
+    if (buf) {
+      fire(c, masterGain!, buf);
+      return;
     }
-  })();
+    // Buffer not decoded yet — decode just this one, then play (still gated on
+    // running, since this resolves asynchronously).
+    void (async () => {
+      try {
+        const res = await fetch(SOURCES[name]);
+        const decoded = await c.decodeAudioData(await res.arrayBuffer());
+        buffers.set(name, decoded);
+        if (!muted && c.state === "running") fire(c, masterGain!, decoded);
+      } catch (e) {
+        console.warn(`[audio] playback failed for ${name}:`, e);
+      }
+    })();
+  };
+
+  if (c.state === "running") {
+    play();
+  } else {
+    // Resume, THEN play. Also (re)start the keep-alive so it stays running.
+    c.resume()
+      .then(() => {
+        startKeepAlive();
+        play();
+      })
+      .catch(() => {
+        /* not yet permitted — next gesture's unlock() will bring it up */
+      });
+  }
 }
 
 /** Spin up a fresh BufferSource (one-shot, GC'd after it ends) → master gain. */

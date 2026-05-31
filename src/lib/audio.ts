@@ -1,29 +1,26 @@
 /**
  * Yaad's audio engine (Web Audio API).
  *
- * ── The bug this is designed to avoid ────────────────────────────────────────
- * An AudioContext created outside a user gesture starts `suspended`. The fatal
- * mistake is to call `source.start()` while it's still suspended (or mid-resume)
- * — the one-shot is silently dropped, so the FIRST sounds after launch never
- * play, and things only "wake up" once some later sound happens to fire after
- * the context finished resuming. To prevent that, `playSfx` NEVER starts a
- * source until the context is actually `running`: if it isn't, we `resume()`
- * first and play in the `.then()`.
+ * ── The bug this is built to avoid ───────────────────────────────────────────
+ * An AudioContext created outside a user gesture starts `suspended`. Calling
+ * `source.start()` while it's still suspended (or mid-resume) SILENTLY DROPS
+ * the one-shot. So any sound fired before the context is `running` is lost —
+ * which is every SFX triggered after an `await` (addTask, snooze) or on a
+ * non-gesture event (focus), right after launch. They only start working once
+ * something resumes the context in-gesture (e.g. completing a task) and the
+ * keep-alive holds it open — hence "it wakes up after I complete one."
  *
- * Pieces:
- *   1. Each clip is decoded ONCE into an AudioBuffer (no per-play decode).
- *   2. A user-gesture `unlock()` that RETRIES on every gesture until the
- *      context truly reaches `running` (a single `{ once: true }` listener is
- *      the trap — if the first resume hasn't resolved, you've lost your only
- *      shot).
- *   3. A continuous, inaudible keep-alive source that holds the output device
- *      open so it never sleeps — the first sound after any idle is instant.
- *
- * Mute: a single in-memory flag, driven by the persisted `sound_enabled`
- * setting. When muted, `playSfx` early-returns before creating any source.
- *
- * The exported surface (`playSfx`, `playRandomNotify`, `setSfxMuted`,
- * `isSfxMuted`) is unchanged, so call sites don't need to know any of this.
+ * The rules here, so NO sound is ever dropped:
+ *   1. `playSfx` NEVER starts a source unless the context is `running`.
+ *   2. If it isn't running, the sound is QUEUED and we `resume()`; the queue is
+ *      flushed the instant the context reaches `running` (on this resume, or on
+ *      the next user gesture via `unlock()`). A short staleness guard stops a
+ *      long-deferred sound from blaring out later.
+ *   3. `unlock()` retries on EVERY gesture until the context truly runs (a lone
+ *      `{ once:true }` listener that fires before the resume is honored is the
+ *      classic trap).
+ *   4. A silent keep-alive source holds the device + context open so, after the
+ *      first success, every later sound is instant.
  */
 
 import addTaskSfx from "../assets/sfx/add_task.wav";
@@ -57,6 +54,9 @@ const SOURCES = {
 export type SfxName = keyof typeof SOURCES;
 
 const DEFAULT_GAIN = 0.5;
+/** Don't fire a queued sound if it's been waiting longer than this (ms) — a
+ *  stale UI tick blaring out seconds later is worse than silence. */
+const MAX_PENDING_AGE = 1500;
 
 let ctx: AudioContext | null = null;
 let masterGain: GainNode | null = null;
@@ -64,22 +64,18 @@ const buffers = new Map<SfxName, AudioBuffer>();
 let decodeStarted = false;
 let keepAlive: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
 let keepAliveTimer: number | undefined;
+let pending: { name: SfxName; at: number }[] = [];
 
 // ── Mute ──────────────────────────────────────────────────────────────────
 let muted = false;
-
-/** Toggle all sound effects on/off. Driven by the `sound_enabled` setting. */
 export function setSfxMuted(value: boolean): void {
   muted = value;
 }
-
-/** Current mute state — handy for initialising a settings toggle. */
 export function isSfxMuted(): boolean {
   return muted;
 }
 
-/** Lazily create the AudioContext + master gain. Created suspended on most
- *  platforms; `unlock()` / `resume()` brings it live after a user gesture. */
+/** Lazily create the AudioContext + master gain (suspended until a gesture). */
 function ensureContext(): AudioContext | null {
   if (ctx) return ctx;
   if (typeof window === "undefined") return null;
@@ -97,8 +93,7 @@ function ensureContext(): AudioContext | null {
   return ctx;
 }
 
-/** Decode every clip into an AudioBuffer exactly once. Fired eagerly at module
- *  load so buffers are warm by the time the user first interacts. */
+/** Decode every clip into an AudioBuffer exactly once, eagerly at module load. */
 async function decodeAll(): Promise<void> {
   const c = ensureContext();
   if (!c || decodeStarted) return;
@@ -118,28 +113,21 @@ async function decodeAll(): Promise<void> {
   );
 }
 
-/**
- * The keep-alive: a silent, looping one-second buffer through a zero-gain node.
- * While it plays, the OS keeps the output device open AND the context stays
- * `running`, so every subsequent sound fires instantly with no warm-up clip.
- */
+/** Silent looping buffer that keeps the context `running` + the device awake. */
 function startKeepAlive(): void {
   if (!ctx || keepAlive) return;
-
   const silent = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
   const source = ctx.createBufferSource();
   source.buffer = silent;
   source.loop = true;
-
   const gain = ctx.createGain();
   gain.gain.value = 0;
   source.connect(gain).connect(ctx.destination);
   try {
     source.start();
   } catch {
-    /* already started or context not ready — harmless */
+    /* harmless */
   }
-
   keepAlive = { source, gain };
 
   if (keepAliveTimer === undefined) {
@@ -149,12 +137,86 @@ function startKeepAlive(): void {
   }
 }
 
+/** Play `name` immediately — context MUST already be running when this runs. */
+function playNow(name: SfxName): void {
+  if (muted) return;
+  const c = ctx;
+  if (!c || !masterGain) return;
+
+  const buf = buffers.get(name);
+  if (buf) {
+    fire(c, masterGain, buf);
+    return;
+  }
+  // Not decoded yet — decode this one, then fire if still running.
+  void (async () => {
+    try {
+      const res = await fetch(SOURCES[name]);
+      const decoded = await c.decodeAudioData(await res.arrayBuffer());
+      buffers.set(name, decoded);
+      if (!muted && c.state === "running") fire(c, masterGain!, decoded);
+    } catch (e) {
+      console.warn(`[audio] playback failed for ${name}:`, e);
+    }
+  })();
+}
+
+/** Fire any queued sounds (dropping stale ones) once the context is running. */
+function flushPending(): void {
+  if (!ctx || ctx.state !== "running" || pending.length === 0) return;
+  const now = Date.now();
+  const items = pending;
+  pending = [];
+  for (const it of items) {
+    if (now - it.at <= MAX_PENDING_AGE) playNow(it.name);
+  }
+}
+
+/** Fresh one-shot BufferSource → master gain. */
+function fire(c: AudioContext, dest: GainNode, buf: AudioBuffer): void {
+  try {
+    const source = c.createBufferSource();
+    source.buffer = buf;
+    source.connect(dest);
+    source.start();
+  } catch (e) {
+    console.warn("[audio] source start failed:", e);
+  }
+}
+
 /**
- * Unlock on a user gesture. Registered WITHOUT `{ once: true }` and retried on
- * every gesture until the context actually reaches `running` — only then do we
- * detach. (The classic failure is a single once-listener that resumes before
- * the gesture is honored, leaving the context suspended forever.)
+ * Public play. If the context is running, play now. Otherwise queue the sound
+ * and resume — the queue flushes the moment the context is running, so the
+ * sound is delayed by a few ms instead of being silently dropped.
  */
+export function playSfx(name: SfxName): void {
+  if (muted) return;
+  const c = ensureContext();
+  if (!c || !masterGain) return;
+
+  if (c.state === "running") {
+    playNow(name);
+    return;
+  }
+
+  pending.push({ name, at: Date.now() });
+  c.resume()
+    .then(() => {
+      startKeepAlive();
+      flushPending();
+    })
+    .catch(() => {
+      /* not permitted yet — the next gesture's unlock() will resume + flush */
+    });
+}
+
+/** Pick one of the five notify tones at random. */
+export function playRandomNotify(): void {
+  const notifies: SfxName[] = ["notify1", "notify2", "notify3", "notify4", "notify5"];
+  playSfx(notifies[Math.floor(Math.random() * notifies.length)]);
+}
+
+// ── Gesture unlock — retries until the context actually runs ────────────────
 function unlock(): void {
   const c = ensureContext();
   if (!c) return;
@@ -162,11 +224,12 @@ function unlock(): void {
     try {
       if (c.state !== "running") await c.resume();
     } catch {
-      /* not honored yet — a later gesture will retry */
+      /* a later gesture will retry */
     }
     await decodeAll();
     if (c.state === "running") {
       startKeepAlive();
+      flushPending();
       detachUnlock();
     }
   })();
@@ -180,7 +243,6 @@ function detachUnlock(): void {
 }
 
 if (typeof window !== "undefined") {
-  // Decode ASAP so buffers are warm; decoding does not need a running context.
   void decodeAll();
 
   window.addEventListener("pointerdown", unlock, true);
@@ -188,90 +250,9 @@ if (typeof window !== "undefined") {
   window.addEventListener("keydown", unlock, true);
   window.addEventListener("touchstart", unlock, true);
 
-  // Re-warm when the window regains focus (a reminder may have fired while the
-  // app was hidden and the OS suspended the context).
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) void resumeCtx();
+    if (!document.hidden && ctx && ctx.state === "suspended") {
+      void ctx.resume().then(flushPending).catch(() => {});
+    }
   });
-}
-
-/** Resume the context if suspended. */
-async function resumeCtx(): Promise<void> {
-  const c = ensureContext();
-  if (!c) return;
-  if (c.state === "suspended") {
-    try {
-      await c.resume();
-    } catch {
-      /* ignore */
-    }
-  }
-}
-
-/**
- * Play a one-shot sound effect.
- *
- * The critical ordering: a source is only ever started while the context is
- * `running`. If it's still `suspended` (e.g. the very first sound right after
- * launch, before the gesture-driven resume has resolved), we resume first and
- * play in the `.then()` — so the sound is delayed by a few ms rather than
- * silently dropped.
- */
-export function playSfx(name: SfxName): void {
-  if (muted) return;
-  const c = ensureContext();
-  if (!c || !masterGain) return;
-
-  const play = () => {
-    if (muted) return;
-    const buf = buffers.get(name);
-    if (buf) {
-      fire(c, masterGain!, buf);
-      return;
-    }
-    // Buffer not decoded yet — decode just this one, then play (still gated on
-    // running, since this resolves asynchronously).
-    void (async () => {
-      try {
-        const res = await fetch(SOURCES[name]);
-        const decoded = await c.decodeAudioData(await res.arrayBuffer());
-        buffers.set(name, decoded);
-        if (!muted && c.state === "running") fire(c, masterGain!, decoded);
-      } catch (e) {
-        console.warn(`[audio] playback failed for ${name}:`, e);
-      }
-    })();
-  };
-
-  if (c.state === "running") {
-    play();
-  } else {
-    // Resume, THEN play. Also (re)start the keep-alive so it stays running.
-    c.resume()
-      .then(() => {
-        startKeepAlive();
-        play();
-      })
-      .catch(() => {
-        /* not yet permitted — next gesture's unlock() will bring it up */
-      });
-  }
-}
-
-/** Spin up a fresh BufferSource (one-shot, GC'd after it ends) → master gain. */
-function fire(c: AudioContext, dest: GainNode, buf: AudioBuffer): void {
-  try {
-    const source = c.createBufferSource();
-    source.buffer = buf;
-    source.connect(dest);
-    source.start();
-  } catch (e) {
-    console.warn("[audio] source start failed:", e);
-  }
-}
-
-/** Pick one of the five notify tones at random. Used for pre-deadline nudges. */
-export function playRandomNotify(): void {
-  const notifies: SfxName[] = ["notify1", "notify2", "notify3", "notify4", "notify5"];
-  playSfx(notifies[Math.floor(Math.random() * notifies.length)]);
 }

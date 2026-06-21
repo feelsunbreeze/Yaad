@@ -14,7 +14,7 @@ Just a thought captured in two seconds, surfaced at the right moment.
 [![SolidJS](https://img.shields.io/badge/UI-SolidJS-b8924a?style=flat-square&logo=solid)](https://solidjs.com)
 [![Rust](https://img.shields.io/badge/core-Rust-f5bf57?style=flat-square&logo=rust&logoColor=492e0a)](https://www.rust-lang.org)
 
-[**Download**](#-download) · [**Ko-fi**](https://ko-fi.com/sunbreeze) · [**Website**](https://yaad.feelsunbreeze.com)
+[**Download**](#-download) · [**Ko-fi**](https://ko-fi.com/feelsunbreeze) · [**The Marginalia**](https://themarginalia.app)
 
 </div>
 

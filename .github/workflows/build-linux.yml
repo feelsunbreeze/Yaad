@@ -1,0 +1,106 @@
+name: Build Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle:
+        description: "Bundle format(s) to produce"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - deb
+          - appimage
+          - both
+
+jobs:
+  build-linux:
+    name: Linux · ${{ inputs.bundle == 'both' && '.deb + AppImage' || inputs.bundle }}
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+
+          # The ubuntu-22.04 runner ships libappindicator3-1 at a mismatched
+          # version, creating a "held broken packages" state. Clear it with:
+          #   1. apt-mark unhold — remove any explicit hold marks
+          #   2. dpkg --force-depends — bypass dep checker and rip them out
+          #   3. apt-get install -f — heal the dep graph
+          # Then install the Tauri v2 replacement (libayatana-appindicator3-dev).
+          sudo apt-mark unhold libappindicator3-1 libappindicator3-dev || true
+          sudo dpkg --remove --force-depends libappindicator3-dev || true
+          sudo dpkg --remove --force-depends libappindicator3-1  || true
+          sudo apt-get install -f -y
+
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            squashfs-tools \
+            libfuse2
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Determine --bundles flag from input
+      - name: Resolve bundle flags
+        id: flags
+        run: |
+          if [ "${{ inputs.bundle }}" = "both" ]; then
+            echo "bundles=deb,appimage" >> "$GITHUB_OUTPUT"
+            echo "artifact_glob=src-tauri/target/release/bundle/{deb/*.deb,appimage/*.AppImage}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ inputs.bundle }}" = "deb" ]; then
+            echo "bundles=deb" >> "$GITHUB_OUTPUT"
+            echo "artifact_glob=src-tauri/target/release/bundle/deb/*.deb" >> "$GITHUB_OUTPUT"
+          else
+            echo "bundles=appimage" >> "$GITHUB_OUTPUT"
+            echo "artifact_glob=src-tauri/target/release/bundle/appimage/*.AppImage" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Linux bundles
+        run: pnpm tauri build --bundles ${{ steps.flags.outputs.bundles }}
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Upload .deb artifact
+        if: ${{ inputs.bundle == 'deb' || inputs.bundle == 'both' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yaad-linux-deb
+          path: src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+
+      - name: Upload .AppImage artifact
+        if: ${{ inputs.bundle == 'appimage' || inputs.bundle == 'both' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yaad-linux-appimage
+          path: src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error

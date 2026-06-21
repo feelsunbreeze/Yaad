@@ -1,0 +1,92 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Yaad",
+  "version": "1.0.0",
+  "identifier": "com.feelsunbreeze.yaad",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Yaad",
+        "width": 380,
+        "height": 580,
+        "minWidth": 380,
+        "maxWidth": 380,
+        "minHeight": 580,
+        "maxHeight": 580,
+        "decorations": false,
+        "transparent": false,
+        "resizable": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "Sunbreeze",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Productivity",
+    "shortDescription": "ADHD-aware reminders that surface when you'll actually notice.",
+    "longDescription": "Yaad is a small, calm reminder app. Capture a thought with the inline bar, and a background worker fires native OS notifications with built-in jitter and pattern-interrupt framing so ADHD brains actually catch the alert.",
+    "linux": {
+      "deb": {
+        "depends": [
+          "libnotify4 (>= 0.7.7)",
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "libnotify >= 0.7.7",
+          "webkit2gtk4.1",
+          "gtk3",
+          "libappindicator-gtk3"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "exceptionDomain": "",
+      "dmg": {
+        "background": "../public/yaadmac.png",
+        "windowSize": { "width": 660, "height": 400 },
+        "appPosition": { "x": 180, "y": 200 },
+        "applicationFolderPosition": { "x": 480, "y": 200 }
+      }
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
+      "nsis": {
+        "installMode": "both",
+        "languages": ["English"],
+        "displayLanguageSelector": false,
+        "headerImage": "nsis/header.bmp",
+        "sidebarImage": "nsis/sidebar.bmp",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "installerHooks": "nsis/installer_hooks.nsi"
+      }
+    }
+  }
+}

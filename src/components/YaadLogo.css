@@ -1,0 +1,80 @@
+/* ── YaadLogo ──────────────────────────────────────────────── */
+.yaad-logo-wrapper {
+  position: relative;
+  display: block;
+}
+
+.yaad-logo-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+/* ── Default (non-animated) state: logo fully visible ───── */
+.yl-path {
+  stroke: none;
+  opacity: 1;
+}
+
+/* ── Animated state ─────────────────────────────────────── */
+.yaad-logo-wrapper.animate .yl-path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 8;
+  fill: transparent;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+
+  animation:
+    yl-appear  0.01s ease-out forwards,
+    yl-trace   0.8s  cubic-bezier(0.4, 0, 0.2, 1) forwards,
+    yl-fill    0.6s  ease-out forwards;
+}
+
+/* Stagger each shape — outer first, then amber, then flame */
+.yaad-logo-wrapper.animate .yl-p1 {
+  stroke: #492E0A;
+  --yl-fill: #492E0A;
+  animation-delay: 0s, 0.05s, 0.85s;
+}
+.yaad-logo-wrapper.animate .yl-p2 {
+  stroke: #C89537;
+  --yl-fill: #C89537;
+  animation-delay: 0.35s, 0.4s, 1.2s;
+}
+.yaad-logo-wrapper.animate .yl-p3 {
+  stroke: #F5BF57;
+  --yl-fill: #F5BF57;
+  animation-delay: 0.7s, 0.75s, 1.55s;
+}
+
+/* Snap path visible right as its trace begins */
+@keyframes yl-appear {
+  to { opacity: 1; }
+}
+
+/* Draw the stroke path */
+@keyframes yl-trace {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* Flood fill and dissolve stroke */
+@keyframes yl-fill {
+  0%   { fill: transparent; stroke-width: 8; }
+  50%  { stroke-width: 0; }
+  100% { fill: var(--yl-fill, currentColor); stroke-width: 0; }
+}
+
+/* ── Reduced motion: show final state immediately ───────── */
+@media (prefers-reduced-motion: reduce) {
+  .yaad-logo-wrapper.animate .yl-path {
+    animation: none !important;
+    fill: revert;
+    stroke: none;
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}

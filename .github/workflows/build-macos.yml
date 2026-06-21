@@ -1,0 +1,109 @@
+name: Build macOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Target architecture"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - apple-silicon
+          - intel
+          - both
+
+jobs:
+  # ── Apple Silicon (M1/M2/M3) ─────────────────────────────────────────────────
+  build-apple-silicon:
+    name: macOS · Apple Silicon (aarch64)
+    runs-on: macos-14  # M1 runner
+    if: ${{ inputs.target == 'apple-silicon' || inputs.target == 'both' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust (stable, aarch64-apple-darwin)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (Apple Silicon DMG)
+        run: pnpm tauri build --target aarch64-apple-darwin --bundles dmg
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yaad-macOS-apple-silicon
+          path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+  # ── Intel (x86_64) ───────────────────────────────────────────────────────────
+  build-intel:
+    name: macOS · Intel (x86_64, cross-compiled)
+    runs-on: macos-14  # M1 runner — cross-compiles to x86_64, no Intel runner needed
+    if: ${{ inputs.target == 'intel' || inputs.target == 'both' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust (stable, x86_64-apple-darwin)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (Intel DMG)
+        run: pnpm tauri build --target x86_64-apple-darwin --bundles dmg
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yaad-macOS-intel
+          path: src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error

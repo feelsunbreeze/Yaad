@@ -83,7 +83,7 @@ Concretely, this means:
 | **macOS** | Intel | [Yaad_1.0.0_x64.dmg](https://github.com/feelsunbreeze/Yaad/releases/latest) |
 | **Linux** | x86_64 | [Yaad_1.0.0_amd64.deb](https://github.com/feelsunbreeze/Yaad/releases/latest) · [Yaad_1.0.0_x86_64.AppImage](https://github.com/feelsunbreeze/Yaad/releases/latest) |
 
-> Releases are signed. macOS builds are notarized.
+> Releases are not signed!
 
 ---
 

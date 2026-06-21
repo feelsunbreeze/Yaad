@@ -129,7 +129,7 @@ Yaad is free, open-source, and built out of genuine love for a problem that affe
 
 If it's helped you, a Ko-fi goes a long way toward keeping the lights on:
 
-[![Support on Ko-fi](https://img.shields.io/badge/Support%20on-Ko--fi-f5bf57?style=for-the-badge&logo=ko-fi&logoColor=492e0a)](https://ko-fi.com/sunbreeze)
+[![Support on Ko-fi](https://img.shields.io/badge/Support%20on-Ko--fi-f5bf57?style=for-the-badge&logo=ko-fi&logoColor=492e0a)](https://ko-fi.com/feelsunbreeze)
 
 ---
 
